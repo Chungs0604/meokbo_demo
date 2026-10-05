@@ -1,10 +1,12 @@
 import process from 'node:process';
 import { app, globalShortcut } from 'electron';
-import { DEBUG, QUIT_SHORTCUT } from './config.js';
+import { DEBUG, DEFAULT_LIMIT_MODE, QUIT_SHORTCUT } from './config.js';
 import { loadUserConfig, configPath } from './user-config.js';
 import { OverlayWindow } from './overlay-window.js';
 import { WindowTracker } from './window-tracker.js';
 import { createWindowSource } from './sources/index.js';
+import { IpcServer } from './ipc-server.js';
+import { UsageMonitor } from './usage-monitor.js';
 
 // 두 개 돌면 캐릭터가 겹쳐 보인다.
 if (!app.requestSingleInstanceLock()) {
@@ -15,6 +17,8 @@ if (!app.requestSingleInstanceLock()) {
 
 let overlay = null;
 let tracker = null;
+let ipcServer = null;
+let usage = null;
 /** 폴링마다 같은 에러를 쏟지 않도록 직전 메시지를 기억한다. */
 let lastTrackerErrorMessage = null;
 
@@ -52,6 +56,33 @@ async function bootstrap() {
 
   tracker.start();
 
+  // --- 사용량 (Phase 2) ---
+  usage = new UsageMonitor(userConfig.limitMode ?? DEFAULT_LIMIT_MODE);
+
+  usage.on('usage', (snapshot) => {
+    log('[usage]', JSON.stringify(snapshot));
+    overlay.send('overlay:usage', snapshot);
+  });
+  usage.on('reset', ({ mode }) => log('[usage] 한도 리셋:', mode));
+  usage.on('complete', ({ sessionId }) => log('[usage] 작업 완료:', sessionId));
+  usage.on('exhausted', ({ resetsAt }) => log('[usage] 한도 소진. 리셋:', resetsAt));
+  usage.start();
+
+  ipcServer = new IpcServer();
+  ipcServer.on('hook', (message) => {
+    log('[hook]', message.event);
+    usage.handleHook(message);
+  });
+  ipcServer.on('error', (error) => console.error('[ipc]', error.message));
+
+  try {
+    await ipcServer.start();
+    log('[ipc] 수신 대기:', ipcServer.socketPath);
+  } catch (error) {
+    // 소켓을 못 열어도 창 추적은 계속돼야 한다. 사용량만 못 받는 상태로 동작한다.
+    console.error('[ipc] 소켓 서버를 열지 못했다:', error.message);
+  }
+
   // Dock·트레이가 없어 종료할 방법이 필요하다. 트레이 메뉴는 Phase 5.
   if (globalShortcut.register(QUIT_SHORTCUT, () => app.quit())) {
     console.log(`[app] 종료 단축키: ${QUIT_SHORTCUT}`);
@@ -75,5 +106,7 @@ app.on('window-all-closed', () => {});
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
   tracker?.stop();
+  usage?.stop();
+  ipcServer?.stop();
   overlay?.destroy();
 });
