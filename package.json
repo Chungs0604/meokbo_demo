@@ -1,0 +1,22 @@
+{
+  "name": "claude-cs",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Claude Code 토큰 사용량에 따라 살이 찌는 데스크톱 캐릭터 오버레이",
+  "type": "module",
+  "main": "src/main/index.js",
+  "scripts": {
+    "build:native": "node scripts/build-native.mjs",
+    "prestart": "npm run build:native",
+    "start": "electron .",
+    "predev": "npm run build:native",
+    "dev": "CLAUDE_CS_DEBUG=1 electron .",
+    "prediag": "npm run build:native",
+    "diag": "electron scripts/diag.mjs",
+    "diag:capture": "electron scripts/diag.mjs --capture"
+  },
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "electron": "^44.5.1"
+  }
+}
