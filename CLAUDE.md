@@ -1,0 +1,121 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+---
+
+Claude Code 토큰 사용량에 따라 살이 찌는 데스크톱 캐릭터 오버레이. Electron + 바닐라 JS,
+창 추적과 훅 수신은 Swift 네이티브 헬퍼가 담당한다. macOS 전용으로 개발 중이다.
+
+## 문서 역할
+
+- `PRD.md` — 요구사항 정본. **FR-xx / NFR-xx 번호가 코드 주석에서 직접 인용된다.**
+  §7 은 사용량 데이터 소스 조사 결과와 채택 근거다
+- `TASKS.md` — Phase 별 체크리스트 겸 진행 상황. 작업이 끝나면 체크박스와 실측값을 갱신한다.
+  미검증 항목은 `[ ]` 로 남기고 왜 못 했는지 적는다
+- `VERIFY-PHASE1.md` — 수동(육안) 검증 체크리스트
+
+코드를 고칠 때 관련 FR 번호를 주석에 남기는 관습을 따른다. 설계 결정의 **근거**는
+커밋 본문이 아니라 `TASKS.md` 항목이나 코드 주석에 적는다.
+
+## 명령어
+
+```bash
+npm start          # 실행 (prestart 가 네이티브 자동 빌드)
+npm run dev        # CLAUDE_CS_DEBUG=1 — [tracker]/[usage]/[hook]/[overlay] 로그 + 디버그 패널
+npm run diag       # Electron 띄워 좌표 계산·터미널 판정 검증 (렌더 없이)
+npm run diag:capture  # 오버레이를 실제로 렌더해 PNG 캡처 (투명도 확인용)
+npm run test:usage # UsageMonitor 단위 테스트 (Electron 불필요)
+npm run build:native  # Swift 헬퍼 2개 컴파일. 소스가 더 새로울 때만 재빌드
+
+npm run hooks:install    # Claude Code 훅·statusLine 등록 (.claude/settings.json)
+npm run hooks:status     # 등록 상태 확인
+npm run hooks:uninstall  # 우리 항목만 선별 제거
+#  -- --global 을 붙이면 ~/.claude/settings.json 에 적용된다
+```
+
+**테스트 러너는 직접 만든 스크립트다** (`scripts/test-usage.mjs`). 프레임워크가 없어 개별
+테스트만 골라 돌리는 기능은 없다. 단일 케이스를 보려면 파일을 직접 편집하거나
+`node -e` 로 `UsageMonitor` 를 import 해서 쓴다. 테스트 프레임워크·린터는 **의도적으로 없다**
+(런타임 의존성 0개 유지 — `npm audit` 0건이 Phase 1 의 산출물이다).
+
+## 아키텍처
+
+독립적인 두 데이터 흐름이 `src/main/index.js` 에서만 만난다.
+
+### 1. 창 추적 — "캐릭터를 어디에 둘지"
+
+```
+window-watcher (Swift, 상주)  →  MacOSWindowSource  →  WindowTracker  →  OverlayWindow
+   NDJSON 한 줄/변화               sample 이벤트         target 이벤트      setBounds
+```
+
+- **소스 어댑터 계약**: `src/main/sources/*` 는 모두 `sample`(payload 또는 `null`) / `error`
+  두 이벤트만 방출한다. `createWindowSource()` 가 플랫폼을 보고 고르며, 비 macOS 폴백은
+  선택 의존성이라 **동적 import** 한다
+- `WindowTracker` 는 폴링을 하지 않는다. 터미널 판정과 상태 전이(`target` / `target-lost`)만 본다
+- 터미널 판정은 macOS 에서 **bundleId 가 정본**이고, bundleId 가 있으면 이름 폴백을 타지 않는다
+  (`config.js` 의 `TERMINAL_BUNDLE_IDS`, 사용자는 `userData/config.json` 으로 추가)
+
+### 2. 사용량 — "캐릭터가 얼마나 살이 쪘는지"
+
+```
+Claude Code ──훅/statusLine──→ hook-client (Swift, 1회성) ──Unix socket──→ IpcServer → UsageMonitor
+```
+
+- **수치(`rate_limits`)는 statusLine payload 에만 들어온다. 훅 payload 에는 없다.**
+  반대로 "작업이 끝난 정확한 순간"은 훅만 안다. 그래서 둘 다 받는다 (PRD §7.5)
+- **파일을 읽지 않는다.** 훅이 밀어주는 데이터만 쓴다 (NFR-05). `~/.claude` 를 뒤지는 코드를
+  추가하지 않는다
+- 소켓은 `userData/ipc.sock`. 훅은 한 줄 쓰고 즉시 끊으며 응답을 기다리지 않는다
+- 소켓 서버가 안 열려도 창 추적은 계속된다 (사용량만 못 받는 상태로 동작)
+
+### 오버레이 윈도우의 불변 조건
+
+`OverlayWindow` 의 생성 옵션은 대부분 NFR 을 직접 구현한 것이다. 건드릴 때 근거를 확인한다.
+
+- `focusable: false` — 입력 포커스를 절대 가져가지 않는다 (NFR-03)
+- `setIgnoreMouseEvents(true, { forward: true })` — 클릭 통과 (NFR-02)
+- `type: 'panel'` + `alwaysOnTop('screen-saver')` — 전체화면 앱 위에도 올라간다
+- 좌표 클램프는 `workArea` 가 아니라 `display.bounds` 기준이다. workArea 로 가두면
+  메뉴바를 피하려다 캐릭터가 창에서 떨어져 나간다
+- 오버레이는 숨겨질 뿐 **닫히지 않는다**. `window-all-closed` 는 의도적으로 빈 핸들러다
+
+### 렌더러
+
+`preload/overlay.cjs` 가 `contextBridge` 로 **수신 채널만** 노출한다 (sandbox 유지).
+렌더러가 main 을 호출하는 경로는 없다. 캐릭터는 CSS 도형 플레이스홀더이고 `--fatness`(0~1)
+변수로 체형을 바꾸도록 돼 있다 (실제 스프라이트는 Phase 5).
+
+## 함정
+
+- **`.claude/settings.json` 은 `.gitignore` 에 있다.** 훅 커맨드에 절대경로가 들어가
+  머신마다 다르기 때문이다. 새로 클론하면 `npm run hooks:install` 을 먼저 실행해야
+  사용량 데이터가 들어온다
+- **`overlay:usage` 는 아직 렌더러에 닿지 않는다.** main 은 보내지만 preload 에 수신 채널이
+  없다. Phase 3 에서 연결한다
+- **앱을 재시작하면 `UsageMonitor` 의 누적 상태가 사라진다.** 리셋 감지는 메모리에 든 이전
+  샘플과 비교하는 방식이라(`resets_at` 전진 또는 사용률 급락), 재시작 직후 첫 샘플에는
+  `reset` 이벤트가 뜨지 않는다. 리셋 전후를 검증할 때 앱을 건드리지 않는다
+- **`tokensPerMinute` 는 원값이 크게 튄다** (statusLine 호출 간격이 불규칙하다).
+  연출에 쓰려면 평활화가 필요하다
+- Dock 아이콘과 트레이가 없어 **종료 수단은 전역 단축키 `Control+Alt+Shift+Q`** 뿐이다
+  (트레이 메뉴는 Phase 5). 단일 인스턴스 락이 걸려 있어 두 번째 실행은 즉시 종료된다
+- `PreToolUse` / `PostToolUse` 훅은 쓰지 않는다. 툴 호출마다 돌아 Claude Code 를 느리게 한다
+  (제거한 선행 도구가 그렇게 약 9ms 를 낭비하고 있었다)
+- 훅 클라이언트가 Swift 인 이유는 **statusLine 이 렌더링마다 호출**되기 때문이다.
+  Node 는 기동만 43ms, 네이티브는 3.1ms. 이 경로에 Node 를 넣지 않는다
+
+## 코드 규약
+
+관찰된 기존 패턴이다. 새 패턴을 도입할 때는 이유를 말한다.
+
+- ESM (`"type": "module"`). 네이티브 빌드·훅 스크립트는 `scripts/*.mjs`,
+  preload 만 `.cjs` (sandbox 프리로드 제약)
+- 클래스는 `#private` 필드 + `EventEmitter` 상속. 공개 표면은 이벤트와 getter 로 좁게 둔다
+- 매직 넘버는 `src/main/config.js` 에 상수로 올리고 왜 그 값인지 주석을 남긴다
+- 에러를 삼키지 않는다. 복구 가능하면 `error` 이벤트로 올리고, 아니면 `console.error` 로
+  드러낸다. 반복되는 에러는 직전 메시지를 기억해 중복만 억제한다
+  (`index.js` 의 `lastTrackerErrorMessage`)
+- 디버그 로그는 `DEBUG`(`CLAUDE_CS_DEBUG=1`) 가드 뒤에 둔다. 사용자가 봐야 할 메시지만
+  무조건 출력한다
