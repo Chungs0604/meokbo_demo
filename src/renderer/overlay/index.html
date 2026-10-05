@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'self'; script-src 'self';"
+    />
+    <title>claude-cs overlay</title>
+    <link rel="stylesheet" href="overlay.css" />
+  </head>
+  <body>
+    <!-- Phase 1 플레이스홀더. --fatness(0~1) 로 체형을 바꾼다. Phase 5 에서 스프라이트로 교체. -->
+    <div class="stage" id="stage" data-state="hidden">
+      <div class="character" id="character">
+        <div class="body">
+          <div class="eye eye--left"></div>
+          <div class="eye eye--right"></div>
+          <div class="mouth"></div>
+        </div>
+        <div class="foot foot--left"></div>
+        <div class="foot foot--right"></div>
+      </div>
+    </div>
+
+    <pre class="debug" id="debug" hidden></pre>
+
+    <script src="overlay.js"></script>
+  </body>
+</html>
