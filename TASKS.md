@@ -3,12 +3,12 @@
 > [PRD.md](./PRD.md) 의 로드맵을 단계별 체크리스트로 분해한 문서.
 > 작업이 끝날 때마다 체크박스를 갱신한다.
 
-**진행 상황**: Phase 1 완료 · Phase 2 착수 대기
+**진행 상황**: Phase 1 완료 · Phase 2 완료 (모드 전환 UI 는 Phase 5 로 이관)
 
 | Phase | 상태 |
 | --- | --- |
 | Phase 1 — Electron 환경 + 창 추적 | ✅ **완료** (멀티 모니터만 미검증) |
-| Phase 2 — 사용량 데이터 | ⬜ 다음 차례 |
+| Phase 2 — 사용량 데이터 | ✅ **완료** (모드 전환 UI 는 Phase 5 로 이관) |
 | Phase 3 — 캐릭터 상태 머신 | ⬜ 대기 |
 | Phase 4 — 빼꼼 완료 알림 | ⬜ 대기 |
 | Phase 5 — 에셋·연출 | ⬜ 대기 |
@@ -115,35 +115,60 @@
 
 ### 2.2 Claude Code 연동 설치
 
-- [ ] `settings.json` 백업 후 Meokbo 훅 8개 + statusLine 항목 제거
-- [ ] claude-cs `statusLine` 커맨드 등록 — payload 를 로컬 소켓으로 Electron 에 전달
-- [ ] `Stop` / `StopFailure(rate_limit)` / `UserPromptSubmit` / `SessionStart` / `SessionEnd` 훅 등록
-- [ ] 훅 커맨드는 **2초 타임아웃 안에 끝나야 한다** — 소켓에 쏘고 즉시 종료, 응답 대기 금지
-- [ ] 소켓 부재(앱 미실행) 시 훅이 Claude Code 를 지연시키지 않고 조용히 성공 종료
-- [ ] 설치/제거를 멱등하게 — 중복 등록·수동 편집 후에도 안전
+- [x] 전역 `settings.json` 백업 후 Meokbo 훅 8개 + statusLine 제거
+      (`PreToolUse`/`PostToolUse` 가 툴 호출마다 약 9ms 를 낭비하고 있었다)
+- [x] 훅 클라이언트를 **Swift 로 작성** — Node 는 기동만 43ms 인데 statusLine 은 렌더링마다
+      호출된다. 네이티브는 3.1ms
+- [x] `statusLine` 커맨드 — payload 에서 직접 `5h N% · 7d N%` 를 만들어 출력하고,
+      같은 payload 를 소켓으로 전달 (앱이 꺼져 있어도 상태줄은 정상 동작)
+- [x] `Stop` / `StopFailure(rate_limit)` / `UserPromptSubmit` / `SessionStart` / `SessionEnd` 훅 등록
+- [x] 훅은 소켓에 쓰고 즉시 종료 — 송신 타임아웃 200ms, 응답 대기 없음
+- [x] 소켓 부재(앱 미실행) 시 조용히 `exit 0` — 훅 실패는 Claude Code 에 에러로 뜬다
+- [x] 설치/제거 멱등 — `npm run hooks:install` / `hooks:uninstall` / `hooks:status`,
+      실행 전 자동 백업, 우리 항목만 선별 제거 (사용자 훅은 건드리지 않음)
+- [x] **기본값을 프로젝트 전용으로** (`.claude/settings.json`). 전역은 `--global` 로 명시적 opt-in
 
 ### 2.3 UsageMonitor 구현
 
-- [ ] 로컬 소켓 서버 — statusLine·훅 payload 수신
-- [ ] `rate_limits.five_hour` / `seven_day` 파싱 → `used_percentage`, `resets_at`
-- [ ] `rate_limits` 부재 처리 — 비구독자이거나 첫 API 응답 전이면 없다. 정상 경로로 다룬다
-- [ ] 더 빠른 리셋 선택 로직 — 두 `resets_at` 중 min (FR-22 타이머용)
-- [ ] 리셋 감지 → `resets_at` 전진 또는 `used_percentage` 급락 시 `reset` 이벤트 (FR-13)
-- [ ] 토큰 소모 **속도**(tokens/min) 산출 — `context_window` 변화량 기반 (FR-20)
-- [ ] 파일 접근은 읽기 전용 보장 (NFR-05)
+- [x] 로컬 소켓 서버 — statusLine·훅 payload 수신
+- [x] `rate_limits.five_hour` / `seven_day` 파싱 → `used_percentage`, `resets_at`
+- [x] `rate_limits` 부재 처리 — 비구독자이거나 첫 API 응답 전이면 없다. 정상 경로로 다룬다
+- [x] 더 빠른 리셋 선택 로직 — 두 `resets_at` 중 min (FR-22 타이머용)
+- [x] 리셋 감지 → `resets_at` 전진 또는 `used_percentage` 급락 시 `reset` 이벤트 (FR-13)
+- [x] 토큰 소모 **속도**(tokens/min) 산출 — 컨텍스트 압축으로 총량이 줄면 속도로 치지 않는다 (FR-20)
+- [x] 3분 무활동 Idle 판정 (FR-21)
+- [x] 작업 완료 / 한도 소진 이벤트 방출 (FR-30, FR-22)
+- [x] 파일을 읽지 않는다 — 훅이 밀어주는 데이터만 쓴다 (NFR-05 자동 충족)
+- [x] **단위 테스트 16건 전부 통과** (`npm run test:usage`)
 
 ### 2.4 한도 모드 설정
 
-- [ ] 설정 저장소 (`userData/config.json`) — 읽기·쓰기·기본값
-- [ ] `limitMode: '5h' | 'weekly'` (기본값 `'5h'`, FR-10)
-- [ ] 트레이 메뉴 또는 설정 창에서 모드 전환 UI
-- [ ] 모드 전환 시 즉시 사용률 재계산·재렌더
+- [x] 설정 저장소 (`userData/config.json`) — 읽기·기본값
+- [x] `limitMode: '5h' | 'weekly'` (기본값 `'5h'`, FR-10)
+- [x] `setLimitMode()` — 모드 변경 시 즉시 사용률 재계산·재방출 (단위 테스트 커버)
+- [ ] 설정 쓰기(저장) 경로 — **Phase 5 로 이관**. 저장할 창구인 트레이 메뉴가 Phase 5 라
+      쓰기만 먼저 만들면 호출자가 없다
+- [ ] 트레이 메뉴 또는 설정 창에서 모드 전환 UI — **Phase 5 로 이관** (트레이 아이콘과 함께)
 
 ### 2.5 Phase 2 검증
 
-- [ ] 실제 Claude Code 사용 직후 사용률이 올라가는지 확인
-- [ ] 한도 모드 전환 시 사용률 수치가 바뀌는지 확인
-- [ ] 리셋 시각 표시가 실제 리셋과 일치하는지 확인
+- [x] 모의 훅으로 파이프라인 end-to-end 확인 — statusline/Stop/StopFailure/UserPromptSubmit 전부 수신
+- [x] `UsageMonitor` 단위 테스트 16건 통과
+- [x] **실제 Claude Code 세션에서 `rate_limits` 수신 확인** (2026-10-06, 세션 재시작 후)
+      — `five_hour` 10% / `seven_day` 13%, `resets_at` → 10-06 03:20 · 10-11 06:00 로 환산 정상.
+      `context_window` 도 함께 와서 `tokensPerMinute` 산출까지 동작
+- [x] 훅 3종 실발화 확인 — `statusline` 17회, `UserPromptSubmit` 1회,
+      `Stop` 1회(→ `complete` 이벤트에 실제 `session_id` 실림)
+- [x] 프로젝트 전용 설정만으로 훅·statusLine 동작 확인 (전역에는 우리 항목이 없는 상태)
+- [ ] 프로젝트 설정이 전역을 **덮는지** 는 미검증 — 양쪽에 동시 등록한 충돌 상황을
+      만들지 않았다. `--global` 옵션을 쓸 때 확인한다
+- [ ] 한도 모드 전환 시 사용률 수치가 바뀌는지 **실측** — 전환 UI 가 Phase 5 라 함께 확인
+- [ ] 리셋 시각 표시가 실제 리셋과 일치하는지 — 다음 `five_hour` 리셋(10-06 03:20)에
+      `reset` 이벤트가 뜨는지 확인한다
+
+**관찰**: `tokensPerMinute` 가 샘플 간 746 → 91920 → 16158 로 크게 튄다. statusLine 호출
+간격이 불규칙한 탓이다. FR-20 밥 먹는 속도 연출에 원값을 그대로 쓰면 모션이 떨리므로
+Phase 3 에서 평활화가 필요하다.
 
 ---
 
@@ -161,6 +186,8 @@
 - [ ] 상태 정의: `WORKING` / `IDLE` / `EXHAUSTED` / `PEEK` / `HIDDEN`
 - [ ] 전이 규칙·전이 조건 테이블 구현
 - [ ] `WORKING` — 토큰 소모 속도에 비례한 밥 먹는 모션 (FR-20)
+- [ ] `tokensPerMinute` 평활화 — statusLine 호출 간격이 불규칙해 원값이 100배까지
+      튄다 (Phase 2 실측). 이동평균 등으로 눌러야 모션이 안 떨린다
 - [ ] 3분 무활동 감지 → `IDLE` (FR-21)
 - [ ] `IDLE` 뒹굴기 모션 + 살찐 상태 헥헥거림 추가
 - [ ] 100% → `EXHAUSTED` 기절 모션 (FR-22)

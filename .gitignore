@@ -4,3 +4,8 @@ out/
 *.log
 .DS_Store
 native/macos/bin/
+
+# hooks:install 이 생성한다. 절대경로가 들어가므로 머신마다 다르다.
+.claude/settings.json
+.claude/settings.local.json
+*.bak-*

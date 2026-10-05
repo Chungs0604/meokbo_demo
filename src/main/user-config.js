@@ -2,13 +2,12 @@ import { app } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 
-/**
- * userData/config.json 을 읽는다. Phase 1 에서 쓰는 건 터미널 화이트리스트 확장뿐이다.
- * Phase 2 에서 한도 모드(limitMode) 저장소로 확장한다.
- */
+/** userData/config.json 로더. 터미널 화이트리스트 확장과 한도 모드를 담는다. */
 const DEFAULTS = {
   extraTerminalBundleIds: [],
   extraTerminalAppNames: [],
+  /** '5h' | 'weekly' — 기본은 5시간 한도 (FR-10). */
+  limitMode: '5h',
 };
 
 export function configPath() {
