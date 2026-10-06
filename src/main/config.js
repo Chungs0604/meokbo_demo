@@ -16,7 +16,7 @@ export const POLL_INTERVAL_MS = 250;
  * 세로로 길다(폭:높이 = 0.59). 그래서 비율이 뒤집혔다.
  * **scripts/build-sheet.mjs 의 CELL 과 반드시 같아야 한다.** 다르면 프레임이 잘린다.
  */
-export const OVERLAY_SIZE = { width: 72, height: 92 };
+export const OVERLAY_SIZE = { width: 104, height: 92 };
 
 /**
  * 캐릭터는 창 상단 테두리에 "올라앉은" 형태여야 한다 (FR-02).
