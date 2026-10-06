@@ -6,6 +6,7 @@
  *  - computeOverlayBounds 경계 케이스 체크
  *  - 실제 오버레이 윈도우를 띄우고 해당 영역을 캡처 (--capture)
  *  - 체형 4단계를 각각 렌더해 PNG 로 남김 (--capture --fatness)
+ *  - 캐릭터 상태별로 렌더해 PNG 로 남김 (--capture --states)
  */
 import process from 'node:process';
 import path from 'node:path';
@@ -18,11 +19,13 @@ import { createWindowSource } from '../src/main/sources/index.js';
 import { OverlayWindow, computeOverlayBounds } from '../src/main/overlay-window.js';
 import { OVERLAY_SIZE } from '../src/main/config.js';
 import { computeFatness } from '../src/main/fatness.js';
+import { computeIntake } from '../src/main/motion.js';
 
 const execFileAsync = promisify(execFile);
 const CAPTURE_DIR = process.env.CLAUDE_CS_CAPTURE_DIR ?? app.getPath('temp');
 const wantCapture = process.argv.includes('--capture');
 const wantFatness = process.argv.includes('--fatness');
+const wantStates = process.argv.includes('--states');
 
 /** 캐릭터 발바닥 라인 = 박스 상단 + (박스 높이 - stage padding 8px + 발 오버행 5px) */
 const FOOT_FROM_BOX_TOP = OVERLAY_SIZE.height - 8 + 5;
@@ -175,6 +178,43 @@ async function main() {
         const shot = await overlay.capturePage();
         await writeFile(file, shot.toPNG());
         console.log(`  ${String(percent).padStart(3)}% ${body.stage.padEnd(6)} -> ${file}`);
+      }
+    }
+
+    // 상태별 모션을 렌더한다 (PRD §2.3 육안 검증).
+    // 애니메이션은 정지 화면으로 안 보이지만, 기절 자세와 리셋 카운트다운은 확인된다.
+    if (wantStates) {
+      console.log('--- character states ---');
+      const cases = [
+        { state: 'WORKING', percent: 20, tokensPerMinute: 18000 },
+        { state: 'IDLE', percent: 20, tokensPerMinute: 0 },
+        { state: 'WORKING', percent: 80, tokensPerMinute: 18000, label: 'WORKING-fat' },
+        { state: 'EXHAUSTED', percent: 100, tokensPerMinute: 0 },
+      ];
+
+      for (const { state, percent, tokensPerMinute, label } of cases) {
+        const body = computeFatness(percent);
+        overlay.send('overlay:usage', {
+          limitMode: '5h',
+          usedPercentage: percent,
+          fatness: body.fatness,
+          stage: body.stage,
+          // 기절 캡처에서 카운트다운이 보이도록 리셋을 1시간 23분 뒤로 둔다.
+          nextResetAt: Date.now() + 83 * 60_000,
+          tokensPerMinute,
+          intake: computeIntake(tokensPerMinute),
+          isIdle: state === 'IDLE',
+          hasData: true,
+          windows: { five_hour: { usedPercentage: percent, resetsAt: null }, seven_day: null },
+        });
+        overlay.send('overlay:character', { state, previous: null, reason: 'diag' });
+        await sleep(900);
+
+        const name = label ?? state;
+        const file = path.join(CAPTURE_DIR, `claude-cs-state-${name}.png`);
+        const shot = await overlay.capturePage();
+        await writeFile(file, shot.toPNG());
+        console.log(`  ${name.padEnd(12)} -> ${file}`);
       }
     }
 

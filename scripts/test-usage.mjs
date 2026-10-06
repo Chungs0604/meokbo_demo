@@ -4,6 +4,8 @@
  */
 import { UsageMonitor } from '../src/main/usage-monitor.js';
 import { computeFatness } from '../src/main/fatness.js';
+import { computeIntake } from '../src/main/motion.js';
+import { StateMachine, CHARACTER_STATES } from '../src/main/state-machine.js';
 
 let passed = 0;
 let failed = 0;
@@ -136,6 +138,95 @@ console.log('--- 스냅샷에 체형이 실린다 (PR A 배선) ---');
   check('5h 70% → stage fat', m.snapshot().stage, 'fat');
   m.setLimitMode('weekly');
   check('모드를 바꾸면 체형도 따라간다', m.snapshot().stage, 'slim');
+}
+
+console.log('--- 토큰 소모 속도 평활화 (FR-20) ---');
+{
+  const m = new UsageMonitor('5h');
+  const ctx = (total) => statusline([10, 1000], null, { total_input_tokens: total, total_output_tokens: 0 });
+  m.handleHook(ctx(1000));
+  check('첫 샘플은 기준점일 뿐', m.snapshot().tokensPerMinute, 0);
+  m.handleHook(ctx(4000));
+  // 간격으로 나누지 않는다. 1분 창 안의 누적량이 그대로 분당 소모량이다.
+  check('창 안의 델타가 그대로 분당 소모량', m.snapshot().tokensPerMinute, 3000);
+  m.handleHook(ctx(4500));
+  check('델타가 누적된다', m.snapshot().tokensPerMinute, 3500);
+  m.handleHook(ctx(2000));
+  check('컨텍스트 압축(감소)은 창에 안 들어간다', m.snapshot().tokensPerMinute, 3500);
+
+  // 간격이 짧다고 값이 튀면 안 된다. 예전 방식이면 여기서 수만~수십만이 나왔다.
+  const spiky = new UsageMonitor('5h');
+  spiky.handleHook(ctx(0));
+  spiky.handleHook(ctx(500));
+  check('연속 호출이어도 증폭되지 않는다', spiky.snapshot().tokensPerMinute, 500);
+}
+
+console.log('--- 밥 먹는 세기 (FR-20) ---');
+{
+  check('0 tpm → 0', computeIntake(0), 0);
+  check('10000 tpm → 0.5', computeIntake(10000), 0.5);
+  check('20000 tpm → 1', computeIntake(20000), 1);
+  check('상한을 넘어도 1 로 자른다', computeIntake(226971), 1);
+  check('수치가 아니면 0', computeIntake(null), 0);
+  const m = new UsageMonitor('5h');
+  m.handleHook(statusline([10, 1000], null, { total_input_tokens: 0, total_output_tokens: 0 }));
+  m.handleHook(statusline([10, 1000], null, { total_input_tokens: 5000, total_output_tokens: 0 }));
+  check('스냅샷에 intake 가 실린다', m.snapshot().intake, 0.25);
+}
+
+console.log('--- 캐릭터 상태 전이 (PRD §2.3) ---');
+{
+  const { HIDDEN, WORKING, IDLE, EXHAUSTED } = CHARACTER_STATES;
+  const usage = (percent, isIdle = false) => ({ usedPercentage: percent, isIdle });
+
+  const sm = new StateMachine();
+  const seen = [];
+  sm.on('change', (e) => seen.push(e.state));
+
+  check('초기 상태는 HIDDEN', sm.state, HIDDEN);
+
+  sm.setUsage(usage(10));
+  check('대상이 없으면 사용량이 와도 HIDDEN', sm.state, HIDDEN);
+
+  sm.setVisible(true);
+  check('터미널 활성 + 활동 중 → WORKING', sm.state, WORKING);
+
+  sm.setUsage(usage(10, true));
+  check('3분 무활동 → IDLE (FR-21)', sm.state, IDLE);
+
+  sm.setUsage(usage(100, true));
+  check('100% 는 IDLE 보다 우선 → EXHAUSTED (FR-22)', sm.state, EXHAUSTED);
+
+  sm.setVisible(false);
+  check('대상 상실은 모든 것보다 우선 → HIDDEN (FR-04)', sm.state, HIDDEN);
+
+  sm.setVisible(true);
+  // 숨는 동안 사용량을 잊지 않는다. 다시 나타나면 마지막으로 알던 상태로 복귀한다.
+  check('다시 나타나면 직전 사용량 기준으로 복귀', sm.state, EXHAUSTED);
+  sm.setUsage(usage(40));
+  check('사용률이 내려오면 다시 WORKING', sm.state, WORKING);
+
+  check(
+    '같은 상태면 change 를 쏘지 않는다',
+    seen,
+    [WORKING, IDLE, EXHAUSTED, HIDDEN, EXHAUSTED, WORKING],
+  );
+}
+
+console.log('--- StopFailure 기절과 해제 (FR-22 / FR-13) ---');
+{
+  const { WORKING, EXHAUSTED } = CHARACTER_STATES;
+  const sm = new StateMachine();
+  sm.setVisible(true);
+  // 훅이 올 때 사용률이 아직 100% 로 안 올라와 있을 수 있다. 그래도 기절해야 한다.
+  sm.setUsage({ usedPercentage: 95, isIdle: false });
+  check('95% 로는 기절하지 않는다', sm.state, WORKING);
+  sm.markExhausted();
+  check('StopFailure → EXHAUSTED', sm.state, EXHAUSTED);
+  sm.setUsage({ usedPercentage: 95, isIdle: false });
+  check('사용률이 낮아도 훅 기절은 안 풀린다', sm.state, EXHAUSTED);
+  sm.clearExhausted();
+  check('한도 리셋으로만 풀린다', sm.state, WORKING);
 }
 
 console.log(`\n${failed === 0 ? 'ALL PASS' : `${failed}건 실패`}  (통과 ${passed} / 전체 ${passed + failed})`);

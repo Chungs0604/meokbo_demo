@@ -15,6 +15,7 @@
     "diag": "electron scripts/diag.mjs",
     "diag:capture": "electron scripts/diag.mjs --capture",
     "diag:fatness": "electron scripts/diag.mjs --capture --fatness",
+    "diag:states": "electron scripts/diag.mjs --capture --states",
     "hooks:install": "node scripts/hooks.mjs install",
     "hooks:uninstall": "node scripts/hooks.mjs uninstall",
     "hooks:status": "node scripts/hooks.mjs status",

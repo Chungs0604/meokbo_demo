@@ -2,7 +2,13 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { BrowserWindow, screen } from 'electron';
-import { DEBUG, OVERLAY_SIZE, SIT_ANCHOR_RATIO, SIT_SINK_PX } from './config.js';
+import {
+  DEBUG,
+  DEBUG_PANEL_HEIGHT,
+  OVERLAY_SIZE,
+  SIT_ANCHOR_RATIO,
+  SIT_SINK_PX,
+} from './config.js';
 
 function debugLog(...args) {
   if (DEBUG) console.log('[overlay]', ...args);
@@ -47,13 +53,41 @@ export function computeOverlayBounds(targetBounds) {
   };
 }
 
+/**
+ * 캐릭터 박스 → 실제 창 bounds.
+ *
+ * 디버그 패널이 캐릭터를 덮지 않도록 창을 위로 늘린다. 화면 위쪽에 자리가 없으면
+ * 늘릴 수 있는 만큼만 늘리는데, **캐릭터 위치는 어떤 경우에도 바뀌면 안 되므로**
+ * 실제로 늘어난 높이(topGap)를 렌더러에 알려 stage 를 그만큼 내리게 한다.
+ * 평상시에는 DEBUG_PANEL_HEIGHT 가 0 이라 캐릭터 박스가 곧 창이다.
+ */
+export function computeWindowBounds(characterBounds) {
+  if (!DEBUG_PANEL_HEIGHT) return { ...characterBounds, topGap: 0 };
+
+  const display = screen.getDisplayNearestPoint({
+    x: characterBounds.x + Math.round(characterBounds.width / 2),
+    y: characterBounds.y,
+  });
+  const top = Math.max(display.bounds.y, characterBounds.y - DEBUG_PANEL_HEIGHT);
+  const topGap = characterBounds.y - top;
+
+  return {
+    x: characterBounds.x,
+    y: top,
+    width: characterBounds.width,
+    height: characterBounds.height + topGap,
+    topGap,
+  };
+}
+
 export class OverlayWindow {
   #win = null;
   #lastBounds = null;
 
   async create() {
     this.#win = new BrowserWindow({
-      ...OVERLAY_SIZE,
+      width: OVERLAY_SIZE.width,
+      height: OVERLAY_SIZE.height + DEBUG_PANEL_HEIGHT,
       show: false,
       transparent: true,
       backgroundColor: '#00000000',
@@ -103,13 +137,15 @@ export class OverlayWindow {
     if (!this.isAlive) return;
 
     const bounds = computeOverlayBounds(target.bounds);
+    const { topGap, ...windowBounds } = computeWindowBounds(bounds);
     const moved = !this.#lastBounds
-      || this.#lastBounds.x !== bounds.x
-      || this.#lastBounds.y !== bounds.y;
+      || this.#lastBounds.x !== windowBounds.x
+      || this.#lastBounds.y !== windowBounds.y
+      || this.#lastBounds.height !== windowBounds.height;
 
     if (moved) {
-      this.#win.setBounds(bounds);
-      this.#lastBounds = bounds;
+      this.#win.setBounds(windowBounds);
+      this.#lastBounds = windowBounds;
     }
 
     const wasVisible = this.#win.isVisible();
@@ -130,6 +166,8 @@ export class OverlayWindow {
         bounds: target.bounds,
       },
       overlayBounds: bounds,
+      // 렌더러가 캐릭터를 패널 아래로 내리는 데 쓴다 (디버그가 아니면 0).
+      topGap,
     });
   }
 

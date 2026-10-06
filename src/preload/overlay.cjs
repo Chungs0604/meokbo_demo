@@ -18,6 +18,7 @@ function receiver(channel) {
 contextBridge.exposeInMainWorld('claudeCS', {
   onState: receiver('overlay:state'),
   onUsage: receiver('overlay:usage'),
+  onCharacter: receiver('overlay:character'),
   // sandbox 프리로드의 process 는 폴리필 서브셋이라 방어적으로 읽는다.
   debug: typeof process !== 'undefined' && process.env?.CLAUDE_CS_DEBUG === '1',
 });
