@@ -27,8 +27,11 @@ const wantCapture = process.argv.includes('--capture');
 const wantFatness = process.argv.includes('--fatness');
 const wantStates = process.argv.includes('--states');
 
-/** 캐릭터 발바닥 라인 = 박스 상단 + (박스 높이 - stage padding 8px + 발 오버행 5px) */
-const FOOT_FROM_BOX_TOP = OVERLAY_SIZE.height - 8 + 5;
+/**
+ * 캐릭터 발바닥 라인 = 박스 상단 + (박스 높이 - 스프라이트 셀의 FOOT_MARGIN 4px).
+ * build-sheet.mjs 가 발끝을 셀 바닥에서 4px 띄워 굽는다.
+ */
+const FOOT_FROM_BOX_TOP = OVERLAY_SIZE.height - 4;
 
 app.dock?.hide();
 app.whenReady().then(main).catch((error) => {

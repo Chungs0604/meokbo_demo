@@ -3,7 +3,16 @@
 const stage = document.getElementById('stage');
 const countdown = document.getElementById('countdown');
 const debugPanel = document.getElementById('debug');
+const layers = [document.getElementById('layer-a'), document.getElementById('layer-b')];
 const api = window.claudeCS;
+
+/** 시트의 행 번호. scripts/build-sheet.mjs 의 STAGE_ORDER 와 같은 순서다. */
+const STAGE_ROWS = { slim: 0, chubby: 1, fat: 2, limit: 3 };
+
+/** 지금 보이는 레이어와 그 행. 크로스페이드는 둘을 번갈아 쓴다. */
+let frontLayer = 0;
+let shownRow = null;
+let stackOrder = 0;
 
 /** 추적 상태·사용량·캐릭터 상태가 각각 다른 채널로 오므로 줄을 따로 들고 합쳐 찍는다. */
 const debugLines = { track: '', usage: '', character: '' };
@@ -39,12 +48,12 @@ if (!api) {
   });
 
   api.onUsage((usage) => {
-    // 체형·밥 먹는 세기는 main 이 계산을 끝냈다. 렌더러는 변수에 꽂고 보간만 맡긴다.
-    // 사용률을 모르는 동안은 CSS 기본값(--fatness: 0, 홀쭉)을 그대로 둔다.
+    // 체형·밥 먹는 세기는 main 이 계산을 끝냈다. 렌더러는 그림만 고른다.
+    // 사용률을 모르는 동안은 아무것도 안 바꾼다 — 첫 스냅샷 전에는 체형을 알 수 없다.
     if (typeof usage.fatness === 'number') {
-      // --body-width / --body-height 가 :root 에 선언돼 있어 :root 에 꽂아야 전파된다.
       document.documentElement.style.setProperty('--fatness', usage.fatness.toFixed(3));
       stage.dataset.stage = usage.stage;
+      showStage(usage.stage);
     }
     document.documentElement.style.setProperty('--intake', (usage.intake ?? 0).toFixed(3));
 
@@ -70,6 +79,41 @@ if (!api) {
     debugLines.character = `state: ${state} (${reason})`;
     renderDebug();
   });
+}
+
+/**
+ * 체형 그림을 바꾼다 (FR-12).
+ *
+ * 그림이 4단계뿐이라 플레이스홀더처럼 폭을 연속으로 늘릴 수 없다. 그래서 레이어 두 장을
+ * 겹쳐 두고 새 체형을 위에서 페이드 인 시킨다. 아래 레이어는 가려진 채 남아 있다가
+ * 다음 전환 때 재사용된다.
+ */
+function showStage(name) {
+  const row = STAGE_ROWS[name];
+  if (row === undefined || row === shownRow) return;
+
+  if (shownRow === null) {
+    // 첫 표시는 섞을 상대가 없다. 바로 보여준다.
+    const layer = layers[frontLayer];
+    layer.style.setProperty('--row', row);
+    layer.style.opacity = '1';
+    shownRow = row;
+    return;
+  }
+
+  const next = layers[1 - frontLayer];
+  next.style.setProperty('--row', row);
+  next.style.zIndex = String(++stackOrder);
+  // 직전 전환에서 쓰던 레이어라 opacity 가 1 로 남아 있다.
+  // 전환을 끈 채 0 으로 되돌리고 리플로우를 강제해야 0 → 1 이 실제로 애니메이션된다.
+  next.style.transition = 'none';
+  next.style.opacity = '0';
+  void next.offsetWidth;
+  next.style.transition = '';
+  next.style.opacity = '1';
+
+  frontLayer = 1 - frontLayer;
+  shownRow = row;
 }
 
 function startCountdown() {
