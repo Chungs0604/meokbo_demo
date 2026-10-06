@@ -20,6 +20,11 @@ if (!api) {
 
   api.onState((state) => {
     stage.dataset.state = state.visible ? 'visible' : 'hidden';
+    // 디버그일 때 창이 위로 늘어난다. 늘어난 만큼 캐릭터를 내려 제자리에 둔다.
+    // 숨을 때는 topGap 이 안 오므로 건드리지 않는다 (다시 보일 때 다시 온다).
+    if (state.visible) {
+      document.documentElement.style.setProperty('--panel-h', `${state.topGap ?? 0}px`);
+    }
 
     if (!api.debug) return;
 
