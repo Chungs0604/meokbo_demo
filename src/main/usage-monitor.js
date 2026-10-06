@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
-import { IDLE_AFTER_MS, LIMIT_MODES } from './config.js';
+import { IDLE_AFTER_MS, LIMIT_MODES, TICK_INTERVAL_MS, TOKEN_RATE_WINDOW_MS } from './config.js';
 import { computeFatness } from './fatness.js';
+import { computeIntake } from './motion.js';
 
 /** 사용률 급락을 리셋으로 간주하는 기준(퍼센트포인트). */
 const RESET_DROP_THRESHOLD = 20;
@@ -27,7 +28,10 @@ export class UsageMonitor extends EventEmitter {
   #isIdle = false;
   /** 토큰 소모 속도 산출용 (FR-20). */
   #lastTokenSample = null;
-  #tokensPerMinute = 0;
+  /** 최근 TOKEN_RATE_WINDOW_MS 안에 들어온 { at, tokens } 들. 오래된 건 버린다. */
+  #tokenDeltas = [];
+  /** 중복 emit 을 막기 위해 마지막으로 내보낸 소모 속도를 기억한다. */
+  #lastEmittedRate = 0;
 
   constructor(limitMode = '5h') {
     super();
@@ -45,7 +49,7 @@ export class UsageMonitor extends EventEmitter {
   }
 
   start() {
-    this.#idleTimer = setInterval(() => this.#checkIdle(), 10_000);
+    this.#idleTimer = setInterval(() => this.#tick(), TICK_INTERVAL_MS);
   }
 
   stop() {
@@ -119,14 +123,27 @@ export class UsageMonitor extends EventEmitter {
 
     if (this.#lastTokenSample) {
       const deltaTokens = total - this.#lastTokenSample.total;
-      const deltaMinutes = (now - this.#lastTokenSample.at) / 60_000;
-      // 컨텍스트가 압축되면 총량이 줄어든다. 음수는 속도로 치지 않는다.
-      if (deltaTokens > 0 && deltaMinutes > 0) {
-        this.#tokensPerMinute = Math.round(deltaTokens / deltaMinutes);
+      // 컨텍스트가 압축되면 총량이 줄어든다. 음수는 소모로 치지 않는다.
+      if (deltaTokens > 0) {
+        this.#tokenDeltas.push({ at: now, tokens: deltaTokens });
         this.#markActivity();
       }
     }
     this.#lastTokenSample = { total, at: now };
+  }
+
+  /**
+   * 최근 1분 동안 쓴 토큰 수 (FR-20).
+   *
+   * 간격으로 나누지 않고 고정 창으로 세는 이유는 config 의 TOKEN_RATE_WINDOW_MS 주석에 있다.
+   * 호출 시점마다 만료분을 버리므로, 토큰을 안 쓰면 statusLine 이 안 와도 자연히 0 으로 내려간다.
+   */
+  #tokensPerMinute() {
+    const cutoff = Date.now() - TOKEN_RATE_WINDOW_MS;
+    this.#tokenDeltas = this.#tokenDeltas.filter((sample) => sample.at > cutoff);
+    const sum = this.#tokenDeltas.reduce((acc, sample) => acc + sample.tokens, 0);
+    // 창이 정확히 1분이라 합이 곧 분당 소모량이다.
+    return Math.round(sum * (60_000 / TOKEN_RATE_WINDOW_MS));
   }
 
   #markActivity() {
@@ -136,6 +153,16 @@ export class UsageMonitor extends EventEmitter {
       this.#emitUsage();
     }
     this.emit('activity');
+  }
+
+  /**
+   * 훅이 안 와도 돌아야 하는 것들.
+   * 토큰 창이 만료되면 소모 속도가 떨어지는데, statusLine 이 멈춰 있으면 아무도 모른다.
+   * 밥 먹는 모션이 제때 멈추도록 변화가 있을 때만 다시 알린다 (FR-20).
+   */
+  #tick() {
+    this.#checkIdle();                                   // 상태가 바뀌면 여기서 이미 쏜다
+    if (this.#tokensPerMinute() !== this.#lastEmittedRate) this.#emitUsage();
   }
 
   #checkIdle() {
@@ -161,14 +188,17 @@ export class UsageMonitor extends EventEmitter {
   snapshot() {
     const usedPercentage = this.usedPercentage();
     const body = computeFatness(usedPercentage);
+    const tokensPerMinute = this.#tokensPerMinute();
     return {
       limitMode: this.#limitMode,
       usedPercentage,
-      // 체형은 main 이 계산해 실어 보내고, 렌더러는 보간만 한다 (FR-11 / FR-12).
+      // 체형·밥 먹는 세기는 main 이 계산해 실어 보내고, 렌더러는 보간만 한다
+      // (FR-11 / FR-12 / FR-20).
       fatness: body?.fatness ?? null,
       stage: body?.stage ?? null,
       nextResetAt: this.nextResetAt(),
-      tokensPerMinute: this.#tokensPerMinute,
+      tokensPerMinute,
+      intake: computeIntake(tokensPerMinute),
       isIdle: this.#isIdle,
       hasData: this.#windows.five_hour !== null || this.#windows.seven_day !== null,
       windows: { ...this.#windows },
@@ -176,6 +206,8 @@ export class UsageMonitor extends EventEmitter {
   }
 
   #emitUsage() {
-    this.emit('usage', this.snapshot());
+    const snapshot = this.snapshot();
+    this.#lastEmittedRate = snapshot.tokensPerMinute;
+    this.emit('usage', snapshot);
   }
 }
