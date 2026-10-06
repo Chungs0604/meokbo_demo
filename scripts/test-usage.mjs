@@ -3,6 +3,7 @@
  * Electron 없이 돌아간다 (usage-monitor.js 는 electron 을 import 하지 않는다).
  */
 import { UsageMonitor } from '../src/main/usage-monitor.js';
+import { computeFatness } from '../src/main/fatness.js';
 
 let passed = 0;
 let failed = 0;
@@ -97,6 +98,44 @@ console.log('--- 사용률 범위 보정 ---');
   check('100 초과는 100 으로 자른다', m.usedPercentage(), 100);
   m.handleHook(statusline([-5, 1000], null));
   check('음수는 0 으로 자른다', m.usedPercentage(), 0);
+}
+
+console.log('--- 체형 단계 매핑 (FR-11) ---');
+{
+  const stage = (p) => computeFatness(p)?.stage;
+  check('0% → 홀쭉', stage(0), 'slim');
+  check('33.9% → 홀쭉 (경계 안쪽)', stage(33.9), 'slim');
+  check('34% → 통통 (경계)', stage(34), 'chubby');
+  check('66.9% → 통통 (경계 안쪽)', stage(66.9), 'chubby');
+  check('67% → 뚱뚱 (경계)', stage(67), 'fat');
+  check('99.9% → 뚱뚱 (경계 안쪽)', stage(99.9), 'fat');
+  check('100% → 한계', stage(100), 'limit');
+  // Phase 2 실측값. 부동소수 오차가 경계를 넘기지 않는지 본다.
+  check('28.999999999999996% → 홀쭉', stage(28.999999999999996), 'slim');
+}
+
+console.log('--- 체형 연속값 (FR-12) ---');
+{
+  check('0% → 0', computeFatness(0).fatness, 0);
+  check('50% → 0.5', computeFatness(50).fatness, 0.5);
+  check('100% → 1', computeFatness(100).fatness, 1);
+  check('100 초과는 1 로 자른다', computeFatness(137).fatness, 1);
+  check('음수는 0 으로 자른다', computeFatness(-5).fatness, 0);
+  // 0% 로 꾸며내면 "아직 모른다" 와 "안 썼다" 가 구분되지 않는다.
+  check('수치 없으면 null', computeFatness(null), null);
+  check('NaN 도 null', computeFatness(Number.NaN), null);
+}
+
+console.log('--- 스냅샷에 체형이 실린다 (PR A 배선) ---');
+{
+  const m = new UsageMonitor('5h');
+  check('데이터 전에는 fatness=null', m.snapshot().fatness, null);
+  check('데이터 전에는 stage=null', m.snapshot().stage, null);
+  m.handleHook(statusline([70, 1000], [20, 5000]));
+  check('5h 70% → fatness 0.7', m.snapshot().fatness, 0.7);
+  check('5h 70% → stage fat', m.snapshot().stage, 'fat');
+  m.setLimitMode('weekly');
+  check('모드를 바꾸면 체형도 따라간다', m.snapshot().stage, 'slim');
 }
 
 console.log(`\n${failed === 0 ? 'ALL PASS' : `${failed}건 실패`}  (통과 ${passed} / 전체 ${passed + failed})`);

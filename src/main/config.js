@@ -82,3 +82,16 @@ export const IDLE_AFTER_MS = 3 * 60 * 1000;
 
 /** Dock 아이콘도 트레이도 없는 상태라 종료 수단이 필요하다. 트레이 메뉴는 Phase 5. */
 export const QUIT_SHORTCUT = 'Control+Alt+Shift+Q';
+
+/**
+ * 사용률 → 체형 단계 경계 (PRD §2.2 체형 단계표: 0~33 / 34~66 / 67~99 / 100).
+ * 표는 정수로 적혀 있지만 실제 `used_percentage` 는 소수로 온다
+ * (Phase 2 실측: 28.999999999999996). 그래서 "미만" 기준으로 적는다.
+ * 33.5% 는 홀쭉, 66.9% 는 통통이고, 100% 만 한계다.
+ */
+export const FATNESS_STAGES = [
+  { stage: 'slim', below: 34 },     // 홀쭉함
+  { stage: 'chubby', below: 67 },   // 통통함
+  { stage: 'fat', below: 100 },     // 뚱뚱함
+  { stage: 'limit', below: Infinity }, // 한계 (100%)
+];

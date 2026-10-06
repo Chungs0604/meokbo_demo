@@ -5,6 +5,8 @@
   --body-width: calc(44px + var(--fatness) * 40px);
   --body-height: calc(48px + var(--fatness) * 16px);
   --bob-duration: calc(1.6s + var(--fatness) * 1.4s);
+  /* 단계가 바뀔 때 몸이 튀지 않을 만큼 길고, 반응이 늦어 보이지 않을 만큼 짧은 값. */
+  --fatness-transition: 600ms;
 }
 
 html,
@@ -40,6 +42,14 @@ body {
   width: var(--body-width);
   height: var(--body-height);
   animation: bob var(--bob-duration) ease-in-out infinite;
+  /*
+   * 단계 사이를 급변 없이 잇는다 (FR-12).
+   * --fatness 는 등록되지 않은 커스텀 프로퍼티라 그 자체는 보간되지 않지만,
+   * 그것으로 계산된 width / height 는 보간 가능한 길이값이라 transition 이 먹는다.
+   */
+  transition:
+    width var(--fatness-transition) ease-out,
+    height var(--fatness-transition) ease-out;
 }
 
 @keyframes bob {

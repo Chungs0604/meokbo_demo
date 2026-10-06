@@ -5,20 +5,24 @@
  *  - isTerminal 단위 체크
  *  - computeOverlayBounds 경계 케이스 체크
  *  - 실제 오버레이 윈도우를 띄우고 해당 영역을 캡처 (--capture)
+ *  - 체형 4단계를 각각 렌더해 PNG 로 남김 (--capture --fatness)
  */
 import process from 'node:process';
 import path from 'node:path';
 import { app, screen } from 'electron';
 import { execFile } from 'node:child_process';
+import { writeFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
 import { WindowTracker } from '../src/main/window-tracker.js';
 import { createWindowSource } from '../src/main/sources/index.js';
 import { OverlayWindow, computeOverlayBounds } from '../src/main/overlay-window.js';
 import { OVERLAY_SIZE } from '../src/main/config.js';
+import { computeFatness } from '../src/main/fatness.js';
 
 const execFileAsync = promisify(execFile);
 const CAPTURE_DIR = process.env.CLAUDE_CS_CAPTURE_DIR ?? app.getPath('temp');
 const wantCapture = process.argv.includes('--capture');
+const wantFatness = process.argv.includes('--fatness');
 
 /** 캐릭터 발바닥 라인 = 박스 상단 + (박스 높이 - stage padding 8px + 발 오버행 5px) */
 const FOOT_FROM_BOX_TOP = OVERLAY_SIZE.height - 8 + 5;
@@ -133,7 +137,6 @@ async function main() {
     const o = computeOverlayBounds(fakeTarget.bounds);
     const pagePath = path.join(CAPTURE_DIR, 'claude-cs-overlay-page.png');
     const image = await overlay.capturePage();
-    const { writeFile } = await import('node:fs/promises');
     await writeFile(pagePath, image.toPNG());
     console.log(`  capturePage -> ${pagePath} (${image.getSize().width}x${image.getSize().height})`);
 
@@ -146,6 +149,33 @@ async function main() {
       console.log(`  screencapture -R ${rect} -> ${screenPath}`);
     } catch (error) {
       console.error('  screencapture 실패:', error.message.split('\n')[0]);
+    }
+
+    // 체형 4단계를 각각 렌더한다 (FR-11 / FR-12 육안 검증).
+    // 주입은 실제 경로와 같은 overlay:usage 채널로 한다. 렌더러에 테스트용 구멍을 내지 않는다.
+    if (wantFatness) {
+      console.log('--- fatness stages ---');
+      for (const percent of [0, 40, 80, 100]) {
+        const body = computeFatness(percent);
+        overlay.send('overlay:usage', {
+          limitMode: '5h',
+          usedPercentage: percent,
+          fatness: body.fatness,
+          stage: body.stage,
+          nextResetAt: null,
+          tokensPerMinute: 0,
+          isIdle: false,
+          hasData: true,
+          windows: { five_hour: { usedPercentage: percent, resetsAt: null }, seven_day: null },
+        });
+        // --fatness-transition 이 600ms 다. 보간이 끝난 뒤 찍어야 최종 체형이 나온다.
+        await sleep(900);
+
+        const file = path.join(CAPTURE_DIR, `claude-cs-fatness-${percent}.png`);
+        const shot = await overlay.capturePage();
+        await writeFile(file, shot.toPNG());
+        console.log(`  ${String(percent).padStart(3)}% ${body.stage.padEnd(6)} -> ${file}`);
+      }
     }
 
     overlay.destroy();
