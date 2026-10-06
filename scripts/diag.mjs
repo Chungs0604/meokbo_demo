@@ -161,7 +161,9 @@ async function main() {
     // 주입은 실제 경로와 같은 overlay:usage 채널로 한다. 렌더러에 테스트용 구멍을 내지 않는다.
     if (wantFatness) {
       console.log('--- fatness stages ---');
-      for (const percent of [0, 40, 80, 100]) {
+      // 마지막 30% 는 **줄어드는** 전환이다. 늘어날 때는 새 몸이 옛 몸을 덮어버려
+      // 레이어가 안 지워지는 버그가 가려진다. 양방향을 다 찍어야 잡힌다.
+      for (const [step, percent] of [0, 40, 80, 100, 30].entries()) {
         const body = computeFatness(percent);
         overlay.send('overlay:usage', {
           limitMode: '5h',
@@ -177,7 +179,7 @@ async function main() {
         // --fatness-transition 이 600ms 다. 보간이 끝난 뒤 찍어야 최종 체형이 나온다.
         await sleep(900);
 
-        const file = path.join(CAPTURE_DIR, `claude-cs-fatness-${percent}.png`);
+        const file = path.join(CAPTURE_DIR, `claude-cs-fatness-${step}-${percent}.png`);
         const shot = await overlay.capturePage();
         await writeFile(file, shot.toPNG());
         console.log(`  ${String(percent).padStart(3)}% ${body.stage.padEnd(6)} -> ${file}`);
