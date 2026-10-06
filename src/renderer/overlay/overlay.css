@@ -97,16 +97,16 @@ body {
    * animation 은 하나의 목록이라 한쪽을 따로 선언하면 다른 쪽이 지워진다.
    * 변수로 자리를 잡아두고 상태별 규칙이 각자 자기 칸만 채우게 한다.
    */
-  --anim-eat: none;
+  --anim-frames: none;
   --anim-pant: none;
-  animation: var(--anim-eat), var(--anim-pant);
+  animation: var(--anim-frames), var(--anim-pant);
 }
 
 /* WORKING: 토큰 소모 속도에 비례해 먹는다 (FR-20). */
 .stage[data-character='WORKING'] .layer {
   --columns: 8;
   background-image: url('assets/eat.png');
-  --anim-eat: eat var(--eat-duration) steps(8) infinite;
+  --anim-frames: frames var(--eat-duration) steps(8) infinite;
 }
 
 /* IDLE: 터미널 위에서 좌우로 뒹군다 (FR-21). */
@@ -115,26 +115,27 @@ body {
 }
 
 /*
- * EXHAUSTED: 옆으로 누워 기절한다 (FR-22). 모션을 멈추는 게 기절의 핵심이다.
+ * EXHAUSTED: 누워서 기절한다 (FR-22).
  *
- * scale 로 줄이는 것은 임시다. 셀이 72x92 인데 80px 짜리 캐릭터를 78도 눕히면
- * 가로로 90px 가 필요해 몸이 잘린다(실측). 제대로 하려면 **처음부터 누워 있는
- * 전용 프레임**(faint 시트)이 있어야 한다 — 그때 이 변형은 지운다.
+ * 전용 시트(faint.png)를 쓴다. 누운 자세·감은 눈·머리 주위를 도는 파리가 그림에
+ * 들어 있어서, 캐릭터를 회전시키던 임시 변형은 더 이상 필요 없다.
+ * 통통 튀는 모션은 끈다 — 기절한 캐릭터가 뛰면 안 된다. 숨쉬기는 프레임이 담당한다.
  */
 .stage[data-character='EXHAUSTED'] .character {
   animation: none;
-  transform: translateY(8px) scale(0.78) rotate(-78deg);
+}
+
+.stage[data-character='EXHAUSTED'] .layer {
+  --columns: 4;
+  background-image: url('assets/faint.png');
+  /* 기절은 느리게 숨만 쉰다. 밥먹기처럼 소모 속도에 연동하지 않는다. */
+  --anim-frames: frames 2.4s steps(4) infinite;
 }
 
 /* 뚱뚱해지면 숨이 가쁘다 (PRD §2.2 / FR-21). */
 .stage[data-stage='fat'] .layer,
 .stage[data-stage='limit'] .layer {
   --anim-pant: pant 0.5s ease-in-out infinite;
-}
-
-/* 기절하면 숨쉬기만 남고 먹는 것은 멈춘다. */
-.stage[data-character='EXHAUSTED'] .layer {
-  --anim-eat: none;
 }
 
 @keyframes bob {
@@ -157,13 +158,16 @@ body {
   }
 }
 
-/* 시트의 열을 왼쪽으로 한 칸씩 민다. steps() 와 짝을 이뤄야 프레임이 또렷하다. */
-@keyframes eat {
+/*
+ * 시트의 열을 왼쪽으로 한 칸씩 민다. steps() 와 짝을 이뤄야 프레임이 또렷하다.
+ * 열 수가 모션마다 달라서 --columns 로 받는다 (밥먹기 8, 기절 4).
+ */
+@keyframes frames {
   from {
     background-position-x: 0;
   }
   to {
-    background-position-x: calc(var(--cell-w) * -8);
+    background-position-x: calc(var(--cell-w) * var(--columns) * -1);
   }
 }
 
