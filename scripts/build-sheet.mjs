@@ -159,15 +159,99 @@ function opaqueBounds(bitmap, width, height) {
  * 파일명에서 체형과 프레임 번호를 읽는다.
  *   slim.png     → { stage: 'slim', frame: 0 }   (정지 포즈)
  *   slim-03.png  → { stage: 'slim', frame: 2 }   (3번째 프레임)
+ *   slim-grid.png → 한 장에 여러 포즈가 격자로 들어 있다. 잘라서 쓴다
  */
 function parseName(file) {
   const base = path.basename(file, path.extname(file));
-  const match = base.match(/^([a-z]+)(?:-(\d+))?$/);
+  const match = base.match(/^([a-z]+)(?:-(grid|\d+))?$/);
   if (!match || !STAGE_ORDER.includes(match[1])) return null;
+  if (match[2] === 'grid') return { stage: match[1], grid: true };
   return { stage: match[1], frame: match[2] ? Number(match[2]) - 1 : 0 };
 }
 
-/** 체형별로 프레임을 모은다. { slim: [파일…], chubby: [...] } */
+/**
+ * 한 축의 히스토그램에서 "덩어리" 구간들을 찾는다.
+ * 틈이 minGap 보다 좁으면 같은 덩어리로 본다 — 캐릭터 안에서도 귀와 몸 사이처럼
+ * 픽셀이 잠깐 끊기는 곳이 있어서, 작은 틈까지 경계로 치면 한 캐릭터가 쪼개진다.
+ */
+function bands(counts, minCount, minGap) {
+  const found = [];
+  let start = -1;
+  let gap = 0;
+
+  for (let i = 0; i < counts.length; i++) {
+    if (counts[i] >= minCount) {
+      if (start < 0) start = i;
+      gap = 0;
+      continue;
+    }
+    if (start < 0) continue;
+    gap++;
+    if (gap >= minGap) {
+      found.push([start, i - gap]);
+      start = -1;
+      gap = 0;
+    }
+  }
+  if (start >= 0) found.push([start, counts.length - 1 - gap]);
+  return found;
+}
+
+/**
+ * 여러 포즈가 격자로 들어 있는 한 장을 프레임별 사각형으로 쪼갠다.
+ *
+ * 생성 AI 에게 프레임을 한 장씩 요청하면 너무 느리다. 격자로 한 번에 받되
+ * **셀 크기를 모델에게 맡기지 않는 것**이 요점이다 — 빈 공간을 찾아 우리가 자른다.
+ * 자른 뒤에는 각 프레임을 발끝 기준으로 다시 정렬하므로 격자가 삐뚤어도 상관없다.
+ *
+ * 읽는 순서는 왼쪽→오른쪽, 위→아래다.
+ */
+function segment(bitmap, width, height) {
+  const minCount = Math.max(3, Math.round(width * 0.002));
+  const minGapY = Math.max(4, Math.round(height * 0.02));
+  const minGapX = Math.max(4, Math.round(width * 0.02));
+
+  const rowCounts = new Uint32Array(height);
+  for (let y = 0; y < height; y++) {
+    let n = 0;
+    for (let x = 0; x < width; x++) {
+      if (bitmap[(y * width + x) * 4 + 3] >= 16) n++;
+    }
+    rowCounts[y] = n;
+  }
+
+  const boxes = [];
+  for (const [y0, y1] of bands(rowCounts, minCount, minGapY)) {
+    const colCounts = new Uint32Array(width);
+    for (let y = y0; y <= y1; y++) {
+      for (let x = 0; x < width; x++) {
+        if (bitmap[(y * width + x) * 4 + 3] >= 16) colCounts[x]++;
+      }
+    }
+    for (const [x0, x1] of bands(colCounts, minCount, minGapX)) {
+      boxes.push({ x: x0, y: y0, width: x1 - x0 + 1, height: y1 - y0 + 1 });
+    }
+  }
+
+  // 배경에 남은 잡티가 한 칸으로 잡히는 일이 있다(실측: 8칸짜리 격자에서 9칸이 나왔다).
+  // 칸 크기는 서로 비슷할 수밖에 없으므로, 중앙값보다 한참 작은 것은 캐릭터가 아니다.
+  if (boxes.length < 2) return boxes;
+  const areas = boxes.map((b) => b.width * b.height).sort((a, b) => a - b);
+  const median = areas[Math.floor(areas.length / 2)];
+  return boxes.filter((b) => b.width * b.height >= median * 0.2);
+}
+
+/** 격자에서 잘라낸 한 칸을 독립된 이미지 버퍼로 뽑는다. */
+function cropBitmap(src, srcW, box) {
+  const out = Buffer.alloc(box.width * box.height * 4);
+  for (let y = 0; y < box.height; y++) {
+    const from = ((box.y + y) * srcW + box.x) * 4;
+    src.copy(out, y * box.width * 4, from, from + box.width * 4);
+  }
+  return out;
+}
+
+/** 체형별로 파일을 모은다. { slim: { frames: [파일…], grid: 파일|null } } */
 function loadFrames(dir) {
   const byStage = new Map();
   const skipped = [];
@@ -178,12 +262,14 @@ function loadFrames(dir) {
       skipped.push(name);
       continue;
     }
-    if (!byStage.has(parsed.stage)) byStage.set(parsed.stage, []);
-    byStage.get(parsed.stage)[parsed.frame] = path.join(dir, name);
+    if (!byStage.has(parsed.stage)) byStage.set(parsed.stage, { frames: [], grid: null });
+    const entry = byStage.get(parsed.stage);
+    if (parsed.grid) entry.grid = path.join(dir, name);
+    else entry.frames[parsed.frame] = path.join(dir, name);
   }
 
   if (skipped.length) {
-    console.error(`  이름 규칙(<체형>[-<번호>].png)에 안 맞아 건너뛴다: ${skipped.join(', ')}`);
+    console.error(`  이름 규칙(<체형>[-<번호>|-grid].png)에 안 맞아 건너뛴다: ${skipped.join(', ')}`);
   }
   return byStage;
 }
@@ -350,9 +436,29 @@ app.whenReady().then(() => {
     console.log(`\n=== ${group} ===`);
     const byStage = new Map();
 
-    for (const [stage, files] of loadFrames(path.join(RAW, group))) {
+    for (const [stage, entry] of loadFrames(path.join(RAW, group))) {
       const prepared = [];
-      for (const file of files) {
+      let source = '낱장';
+
+      if (entry.grid) {
+        // 격자 한 장에서 포즈를 잘라낸다. 잘라낸 칸이 그대로 한 프레임이 된다.
+        const sheet = prepare(entry.grid);
+        const boxes = segment(sheet.bitmap, sheet.width, sheet.height);
+        source = `격자 ${boxes.length}칸`;
+        for (const box of boxes) {
+          const bitmap = cropBitmap(sheet.bitmap, sheet.width, box);
+          prepared.push({
+            file: entry.grid,
+            width: box.width,
+            height: box.height,
+            bitmap,
+            box: opaqueBounds(bitmap, box.width, box.height),
+            cleared: sheet.cleared,
+          });
+        }
+      }
+
+      for (const file of entry.frames) {
         if (!file) continue;
         const frame = prepare(file);
         if (!frame.box) {
@@ -361,9 +467,11 @@ app.whenReady().then(() => {
         }
         prepared.push(frame);
       }
-      if (prepared.length) byStage.set(stage, prepared);
-      console.log(`  ${stage.padEnd(7)} ${String(prepared.length).padStart(2)} 프레임`
-        + `  배경 제거 ${(prepared.reduce((a, f) => a + f.cleared, 0) / prepared.length * 100).toFixed(0)}%`);
+
+      const usable = prepared.filter((f) => f.box);
+      if (usable.length) byStage.set(stage, usable);
+      console.log(`  ${stage.padEnd(7)} ${String(usable.length).padStart(2)} 프레임 (${source})`
+        + `  배경 제거 ${(usable.reduce((a, f) => a + f.cleared, 0) / Math.max(1, usable.length) * 100).toFixed(0)}%`);
     }
 
     if (!byStage.size) continue;
