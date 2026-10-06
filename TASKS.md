@@ -9,7 +9,7 @@
 | --- | --- |
 | Phase 1 — Electron 환경 + 창 추적 | ✅ **완료** (멀티 모니터만 미검증) |
 | Phase 2 — 사용량 데이터 | ✅ **완료** (모드 전환 UI 는 Phase 5 로 이관) |
-| Phase 3 — 캐릭터 상태 머신 | ⬜ 대기 |
+| Phase 3 — 캐릭터 상태 머신 | ✅ 완료 (PEEK 전이는 Phase 4) |
 | Phase 4 — 빼꼼 완료 알림 | ⬜ 대기 |
 | Phase 5 — 에셋·연출 | ⬜ 대기 |
 
@@ -257,10 +257,12 @@ Phase 3 에서 평활화가 필요하다.
       `npm run diag:states` 캡처에 누운 자세·감은 눈·카운트다운 `1:23:00` 이 찍혔다
 - [x] 캐릭터 상태별 렌더 캡처 — `npm run diag:states`
 - [x] 단위 테스트 60건 통과 (`npm run test:usage`, PR A 36 + 상태·속도 24)
-- [ ] 3분 대기 → Idle 전환 확인 — 전이 규칙 자체는 단위 테스트로 검증했지만
-      **실제 3분 대기는 미검증**이다. 개발 중에는 Claude Code 가 계속 토큰을 써서
-      `lastActivityAt` 이 갱신돼 `IDLE` 에 들어가지 않는다.
-      앱을 띄워둔 채 Claude Code 를 3분간 쓰지 않는 상황에서 확인해야 한다
+- [x] 3분 대기 → Idle 전환 확인 — 마지막 토큰 소모 후 **약 3분 뒤 10:03:42 에**
+      `[character] WORKING → IDLE (no-activity)`, 다시 작업하자 `IDLE → WORKING` 복귀.
+      검증하려면 **앱을 띄워둔 채 Claude Code 를 3분간 쓰지 않아야 한다** —
+      개발 중에는 토큰 소모가 계속 `lastActivityAt` 을 갱신해서 들어가지 않는다
+- [x] `tokensPerMinute` 평활화 실데이터 확인 — 평상시 691 tpm / `intake` 0.035.
+      Phase 2 의 폭주(최대 226971)가 재현되지 않는다
 
 ---
 
