@@ -20,6 +20,7 @@
     "hooks:uninstall": "node scripts/hooks.mjs uninstall",
     "hooks:status": "node scripts/hooks.mjs status",
     "test:usage": "node scripts/test-usage.mjs",
+    "build:sheet": "electron scripts/build-sheet.mjs",
     "preinject": "npm run build:native",
     "inject": "node scripts/inject-usage.mjs"
   },
