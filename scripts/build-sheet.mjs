@@ -391,6 +391,23 @@ function buildSheet(group, byStage) {
   // 캔버스 크기가 제각각이라 "캔버스 대비 비율"로 비교해야 공통 배율이 나온다.
   const tallest = Math.max(...all.map((f) => f.box.height / f.height));
 
+  const scaleOf = (f) => (charH * ((f.box.height / f.height) / tallest)) / f.box.height;
+
+  /*
+   * 높이만 맞추면 **가로로 긴 포즈가 셀 밖으로 나간다** — 기절처럼 누운 그림이 그렇다.
+   * 가장 넓어지는 프레임이 셀을 넘으면 그룹 전체를 같은 비율로 줄인다.
+   * 프레임마다 따로 줄이면 체형 간 크기 차이가 사라지므로 **공통 배율**이어야 한다.
+   */
+  const maxCharW = (CELL.width - 6) * SCALE;
+  let shrink = 1;
+  for (const frame of all) {
+    const projected = frame.box.width * scaleOf(frame);
+    if (projected > maxCharW) shrink = Math.min(shrink, maxCharW / projected);
+  }
+  if (shrink < 1) {
+    console.log(`  가로가 셀을 넘어 전체를 ${(shrink * 100).toFixed(0)}% 로 줄였다`);
+  }
+
   const sheetW = cellW * columns;
   const sheetH = cellH * STAGE_ORDER.length;
   const sheet = Buffer.alloc(sheetW * sheetH * 4);
@@ -399,7 +416,8 @@ function buildSheet(group, byStage) {
   STAGE_ORDER.forEach((stage, row) => {
     let frames = byStage.get(stage);
     if (!frames?.length) {
-      frames = byStage.get('slim');
+      // 기절처럼 한 체형만 만든 모션은 slim 자체가 없다. 있는 것 중 첫 번째로 메운다.
+      frames = byStage.get('slim') ?? [...byStage.values()][0];
       filled.push(stage);
     }
     if (!frames?.length) return;
@@ -407,8 +425,7 @@ function buildSheet(group, byStage) {
     for (let column = 0; column < columns; column++) {
       // 프레임 수가 모자라면 마지막 프레임을 늘려 쓴다. 중간이 비면 재생이 끊긴다.
       const frame = frames[column] ?? frames[frames.length - 1];
-      const relative = (frame.box.height / frame.height) / tallest;
-      const scale = (charH * relative) / frame.box.height;
+      const scale = scaleOf(frame) * shrink;
 
       const size = {
         width: Math.max(1, Math.round(frame.width * scale)),
