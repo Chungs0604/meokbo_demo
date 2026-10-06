@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { IDLE_AFTER_MS, LIMIT_MODES } from './config.js';
+import { computeFatness } from './fatness.js';
 
 /** 사용률 급락을 리셋으로 간주하는 기준(퍼센트포인트). */
 const RESET_DROP_THRESHOLD = 20;
@@ -158,9 +159,14 @@ export class UsageMonitor extends EventEmitter {
   }
 
   snapshot() {
+    const usedPercentage = this.usedPercentage();
+    const body = computeFatness(usedPercentage);
     return {
       limitMode: this.#limitMode,
-      usedPercentage: this.usedPercentage(),
+      usedPercentage,
+      // 체형은 main 이 계산해 실어 보내고, 렌더러는 보간만 한다 (FR-11 / FR-12).
+      fatness: body?.fatness ?? null,
+      stage: body?.stage ?? null,
       nextResetAt: this.nextResetAt(),
       tokensPerMinute: this.#tokensPerMinute,
       isIdle: this.#isIdle,
