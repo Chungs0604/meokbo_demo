@@ -7,6 +7,7 @@ import { WindowTracker } from './window-tracker.js';
 import { createWindowSource } from './sources/index.js';
 import { IpcServer } from './ipc-server.js';
 import { UsageMonitor } from './usage-monitor.js';
+import { StateMachine } from './state-machine.js';
 
 // 두 개 돌면 캐릭터가 겹쳐 보인다.
 if (!app.requestSingleInstanceLock()) {
@@ -19,6 +20,7 @@ let overlay = null;
 let tracker = null;
 let ipcServer = null;
 let usage = null;
+let character = null;
 /** 폴링마다 같은 에러를 쏟지 않도록 직전 메시지를 기억한다. */
 let lastTrackerErrorMessage = null;
 
@@ -41,17 +43,26 @@ async function bootstrap() {
   tracker.on('target', (target) => {
     log('[tracker] target', target.appName, target.bounds);
     overlay.syncToTarget(target);
+    character.setVisible(true);
   });
 
   tracker.on('target-lost', (reason) => {
     log('[tracker] lost:', reason);
     overlay.hide(reason);
+    character.setVisible(false);
   });
 
   tracker.on('error', (error) => {
     if (error.message === lastTrackerErrorMessage) return;
     lastTrackerErrorMessage = error.message;
     console.error('[tracker] 창 추적 실패:', error.message);
+  });
+
+  // 캐릭터 상태는 창 추적과 사용량을 둘 다 봐야 정해진다. 그래서 tracker.start() 전에 만든다.
+  character = new StateMachine();
+  character.on('change', ({ state, previous, reason }) => {
+    log(`[character] ${previous} → ${state} (${reason})`);
+    overlay.send('overlay:character', { state, previous, reason });
   });
 
   tracker.start();
@@ -62,10 +73,17 @@ async function bootstrap() {
   usage.on('usage', (snapshot) => {
     log('[usage]', JSON.stringify(snapshot));
     overlay.send('overlay:usage', snapshot);
+    character.setUsage(snapshot);
   });
-  usage.on('reset', ({ mode }) => log('[usage] 한도 리셋:', mode));
+  usage.on('reset', ({ mode }) => {
+    log('[usage] 한도 리셋:', mode);
+    character.clearExhausted();   // 한도가 풀려야 기절에서 깨어난다 (FR-13)
+  });
   usage.on('complete', ({ sessionId }) => log('[usage] 작업 완료:', sessionId));
-  usage.on('exhausted', ({ resetsAt }) => log('[usage] 한도 소진. 리셋:', resetsAt));
+  usage.on('exhausted', ({ resetsAt }) => {
+    log('[usage] 한도 소진. 리셋:', resetsAt);
+    character.markExhausted();
+  });
   usage.start();
 
   ipcServer = new IpcServer();
