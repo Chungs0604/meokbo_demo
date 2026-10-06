@@ -208,8 +208,17 @@ function bands(counts, minCount, minGap) {
  */
 function segment(bitmap, width, height) {
   const minCount = Math.max(3, Math.round(width * 0.002));
-  const minGapY = Math.max(4, Math.round(height * 0.02));
-  const minGapX = Math.max(4, Math.round(width * 0.02));
+  /*
+   * 칸 사이 틈의 최소 폭.
+   *
+   * 생성 AI 는 "충분히 띄워라"라고 해도 꽤 빡빡하게 붙여 준다 — 실측하니
+   * 2400px 격자에서 33px, 1200px 격자에서 11px 까지 좁았다(캔버스의 0.9~1.5%).
+   * 처음에 2% 로 잡았더니 한 행이 통째로 한 칸으로 잡혔다.
+   * 0.4% 로 내려 실측 최솟값 아래에 두되, 캐릭터가 쪼개지지는 않는다 —
+   * 한 행 높이 전체로 열을 세므로 캐릭터 안에 완전히 빈 열은 거의 생기지 않는다.
+   */
+  const minGapY = Math.max(3, Math.round(height * 0.004));
+  const minGapX = Math.max(3, Math.round(width * 0.004));
 
   const rowCounts = new Uint32Array(height);
   for (let y = 0; y < height; y++) {
