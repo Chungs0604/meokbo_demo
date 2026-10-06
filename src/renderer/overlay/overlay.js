@@ -101,7 +101,9 @@ function showStage(name) {
     return;
   }
 
+  const current = layers[frontLayer];
   const next = layers[1 - frontLayer];
+
   next.style.setProperty('--row', row);
   next.style.zIndex = String(++stackOrder);
   // 직전 전환에서 쓰던 레이어라 opacity 가 1 로 남아 있다.
@@ -111,6 +113,11 @@ function showStage(name) {
   void next.offsetWidth;
   next.style.transition = '';
   next.style.opacity = '1';
+
+  // 이전 체형도 같이 사라져야 한다. 새 그림을 위에 얹기만 하면 그림마다 실루엣이 달라
+  // 투명한 부분으로 옛 몸이 비쳐 **두 겹으로 보인다** (체형이 작아질 때 특히 심하다).
+  current.style.transition = '';
+  current.style.opacity = '0';
 
   frontLayer = 1 - frontLayer;
   shownRow = row;
