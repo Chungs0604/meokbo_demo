@@ -84,21 +84,37 @@ Claude Code ──훅/statusLine──→ hook-client (Swift, 1회성) ──Uni
 ### 렌더러
 
 `preload/overlay.cjs` 가 `contextBridge` 로 **수신 채널만** 노출한다 (sandbox 유지).
-렌더러가 main 을 호출하는 경로는 없다. 캐릭터는 CSS 도형 플레이스홀더이고 `--fatness`(0~1)
-변수로 체형을 바꾸도록 돼 있다 (실제 스프라이트는 Phase 5).
+렌더러가 main 을 호출하는 경로는 없다. 채널은 셋이다 — `overlay:state`(위치·표시),
+`overlay:usage`(체형·소모 속도), `overlay:character`(행동 상태).
+
+**판단은 전부 main 이 하고 렌더러는 그리기만 한다.** 체형(`fatness`), 밥 먹는 세기(`intake`),
+행동 상태(`StateMachine`) 모두 main 에서 계산해 내려보낸다. 렌더러는 sandbox + CSP `'self'`
+라 ESM import 가 없어 모듈을 공유할 수 없고, main 에 두면 Electron 없이 단위 테스트가 된다.
+
+렌더러가 자기 판단으로 하는 일은 **리셋 카운트다운 하나**다. statusLine 은 Claude Code 가
+화면을 그릴 때만 호출되므로 기절해 있는 동안에는 새 수치가 오지 않는다. 받아둔
+`nextResetAt` 으로 직접 시계를 돌리는 수밖에 없다.
+
+캐릭터는 CSS 도형 플레이스홀더다 (실제 스프라이트는 Phase 5). 체형은 `--fatness`(0~1),
+밥 먹는 속도는 `--intake`(0~1), 상태는 `data-character`, 체형 단계는 `data-stage` 로 받는다.
+`--fatness` 같은 합성 변수를 쓰는 선언은 **그 변수가 보이는 위치에 두어야 한다** —
+미등록 커스텀 프로퍼티는 선언된 요소에서 값이 굳어 내려오기 때문에, `:root` 에 선언한
+`--eat-duration` 은 `.stage` 에 꽂은 `--slow` 를 보지 못한다.
 
 ## 함정
 
 - **`.claude/settings.json` 은 `.gitignore` 에 있다.** 훅 커맨드에 절대경로가 들어가
   머신마다 다르기 때문이다. 새로 클론하면 `npm run hooks:install` 을 먼저 실행해야
   사용량 데이터가 들어온다
-- **`overlay:usage` 는 아직 렌더러에 닿지 않는다.** main 은 보내지만 preload 에 수신 채널이
-  없다. Phase 3 에서 연결한다
 - **앱을 재시작하면 `UsageMonitor` 의 누적 상태가 사라진다.** 리셋 감지는 메모리에 든 이전
   샘플과 비교하는 방식이라(`resets_at` 전진 또는 사용률 급락), 재시작 직후 첫 샘플에는
   `reset` 이벤트가 뜨지 않는다. 리셋 전후를 검증할 때 앱을 건드리지 않는다
-- **`tokensPerMinute` 는 원값이 크게 튄다** (statusLine 호출 간격이 불규칙하다).
-  연출에 쓰려면 평활화가 필요하다
+- **`tokensPerMinute` 는 "최근 1분간 쓴 토큰 수" 다.** 직전 샘플과의 차이를 간격으로 나누는
+  방식은 statusLine 호출 간격이 불규칙해 원값이 100배까지 튀었다 (실측 최대 226971).
+  분모를 고정한 슬라이딩 창으로 바꿨으니 **다시 간격으로 나누지 않는다**
+- **사용량은 Claude Code 가 statusLine 을 그릴 때만 들어온다.** 폴링이 없어서, Claude Code 를
+  안 쓰는 동안은 수치가 그대로 멈춰 있다. 리셋도 리셋 시각이 아니라 그 다음 statusLine 에
+  알게 된다. 시각에 맞춰 뭔가 해야 하면 받아둔 `nextResetAt` 으로 직접 세야 한다
 - Dock 아이콘과 트레이가 없어 **종료 수단은 전역 단축키 `Control+Alt+Shift+Q`** 뿐이다
   (트레이 메뉴는 Phase 5). 단일 인스턴스 락이 걸려 있어 두 번째 실행은 즉시 종료된다
 - `PreToolUse` / `PostToolUse` 훅은 쓰지 않는다. 툴 호출마다 돌아 Claude Code 를 느리게 한다
