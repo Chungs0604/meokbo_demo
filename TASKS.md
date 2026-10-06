@@ -256,6 +256,11 @@ Phase 3 에서 평활화가 필요하다.
       `[character] WORKING → EXHAUSTED (limit-reached)`, 40% 로 내리면 복귀 확인.
       `npm run diag:states` 캡처에 누운 자세·감은 눈·카운트다운 `1:23:00` 이 찍혔다
 - [x] 캐릭터 상태별 렌더 캡처 — `npm run diag:states`
+- [ ] **알려진 제약**: macOS Space 전환 애니메이션 중 캐릭터가 잠깐 스쳐 보인다.
+      `screen-saver` 창 레벨이 전환 애니메이션 위에 고정되는 것이 원인으로 보인다.
+      Space 소속 한정 / 레벨 낮추기 / `activeSpaceDidChange` 즉시 숨김 **셋 다 실패**했다
+      (상세와 재시도 금지 사유는 `CLAUDE.md` 함정 항목).
+      기능 영향 없음. 스프라이트가 들어오는 Phase 5 에서 다시 본다
 - [x] 단위 테스트 60건 통과 (`npm run test:usage`, PR A 36 + 상태·속도 24)
 - [x] 3분 대기 → Idle 전환 확인 — 마지막 토큰 소모 후 **약 3분 뒤 10:03:42 에**
       `[character] WORKING → IDLE (no-activity)`, 다시 작업하자 `IDLE → WORKING` 복귀.

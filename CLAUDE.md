@@ -115,6 +115,16 @@ Claude Code ──훅/statusLine──→ hook-client (Swift, 1회성) ──Uni
 - **사용량은 Claude Code 가 statusLine 을 그릴 때만 들어온다.** 폴링이 없어서, Claude Code 를
   안 쓰는 동안은 수치가 그대로 멈춰 있다. 리셋도 리셋 시각이 아니라 그 다음 statusLine 에
   알게 된다. 시각에 맞춰 뭔가 해야 하면 받아둔 `nextResetAt` 으로 직접 세야 한다
+- **macOS Space(데스크톱) 전환 중 캐릭터가 잠깐 스쳐 보인다. 고치려 하지 마라 — 세 가지를
+  이미 해봤고 전부 실패했다.** 오버레이가 `screen-saver` 레벨이라 전환 애니메이션 위에
+  고정돼 뜨는 것이 원인으로 보인다. 시도한 것:
+  1. `setVisibleOnAllWorkspaces(false, …)` — Space 소속을 터미널 쪽으로 한정. 변화 없음
+  2. `alwaysOnTop` 레벨을 `screen-saver` → `floating` — 변화 없음.
+     게다가 전체화면 앱 위로 올라가는 성질을 잃는다
+  3. 헬퍼가 `NSWorkspace.activeSpaceDidChangeNotification` 을 받아 즉시 숨기기 —
+     변화 없음. **이 알림은 전환이 끝난 뒤에 온다**
+  전환 시작 시점을 알려주는 공개 API 가 없어 현재 구조로는 해결 수단이 없다.
+  기능에는 영향이 없는 약 0.3초짜리 시각적 artifact 다
 - Dock 아이콘과 트레이가 없어 **종료 수단은 전역 단축키 `Control+Alt+Shift+Q`** 뿐이다
   (트레이 메뉴는 Phase 5). 단일 인스턴스 락이 걸려 있어 두 번째 실행은 즉시 종료된다
 - `PreToolUse` / `PostToolUse` 훅은 쓰지 않는다. 툴 호출마다 돌아 Claude Code 를 느리게 한다
