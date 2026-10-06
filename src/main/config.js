@@ -95,3 +95,29 @@ export const FATNESS_STAGES = [
   { stage: 'fat', below: 100 },     // 뚱뚱함
   { stage: 'limit', below: Infinity }, // 한계 (100%)
 ];
+
+/** 이 사용률부터 기절한다 (FR-22). 체형 `limit` 단계와 같은 경계다. */
+export const EXHAUSTED_PERCENTAGE = 100;
+
+/**
+ * 토큰 소모 속도를 내는 창 길이 (FR-20 평활화).
+ *
+ * statusLine 호출 간격이 불규칙해서 "직전 샘플과의 차이 / 그 간격" 으로 재면
+ * 원값이 100배까지 튄다 (Phase 2 실측: 746 → 91920 → 16158, 최대 226971).
+ * 간격이 짧을수록 분모가 작아져 증폭되는 게 원인이라, 분모를 고정하고
+ * "최근 1분 동안 실제로 쓴 토큰 수" 를 그대로 속도로 쓴다. 정의도 직관적이다.
+ */
+export const TOKEN_RATE_WINDOW_MS = 60 * 1000;
+
+/**
+ * 밥 먹는 모션이 최고 속도가 되는 분당 토큰 수 (FR-20).
+ * Phase 2 실측에서 평상시가 2k~12k, 압축 직후 피크가 수만이었다.
+ * 2만을 상한으로 두면 일반 작업 구간에서 속도 변화가 눈에 들어온다.
+ */
+export const TOKENS_PER_MINUTE_FULL = 20000;
+
+/**
+ * UsageMonitor 자체 점검 주기. Idle 판정(FR-21)과 토큰 창 만료를 여기서 본다.
+ * 둘 다 "3분" / "1분" 단위라 10초면 충분히 촘촘하고, 빈 타이머라 비용이 없다.
+ */
+export const TICK_INTERVAL_MS = 10 * 1000;
