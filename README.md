@@ -5,8 +5,9 @@ Claude Code 터미널 창 위에 올라앉는 **투명 오버레이 데스크톱
 토큰 사용량을 "밥"으로 비유해, 사용량이 늘어날수록 캐릭터가 **살이 찌고 둔해진다.**
 다른 창을 보고 있을 때 작업이 끝나면 화면 우측에서 **빼꼼** 나타나 알린다.
 
-> 개발 중이다. 현재 Phase 2 까지 완료 — 창을 따라다니는 플레이스홀더 캐릭터와
-> 사용량 데이터 수집까지 동작한다. 체형 변화·빼꼼 알림·실제 에셋은 미구현이다.
+> 개발 중이다. 현재 Phase 3 까지 완료 — 터미널 창을 따라다니고, 사용량에 따라 체형이
+> 바뀌며, 상태별로 밥 먹기·뒹굴기·기절 스프라이트가 재생된다.
+> 빼꼼 알림(Phase 4), 리셋 트림 연출·트레이 메뉴·패키징(Phase 5)이 남았다.
 > 진행 상황은 [TASKS.md](./TASKS.md) 를 본다.
 
 ## 요구 환경
@@ -64,6 +65,7 @@ npm run diag           # 좌표 계산·터미널 판정 진단 (렌더 없이)
 npm run diag:capture   # 오버레이를 렌더해 PNG 캡처 (투명도 확인)
 npm run test:usage     # UsageMonitor 단위 테스트
 npm run build:native   # Swift 헬퍼 컴파일 (start/dev/diag 가 자동 실행)
+npm run build:sheet    # 캐릭터 원본 프레임을 스프라이트 시트로 굽는다 (원본 필요)
 
 npm run hooks:status     # 훅 등록 상태 확인
 npm run hooks:uninstall  # 우리 항목만 선별 제거
