@@ -30,6 +30,7 @@ npm run diag:states   # 캐릭터 상태별 캡처 (WORKING / IDLE / EXHAUSTED +
 npm run test:usage # UsageMonitor 단위 테스트 (Electron 불필요)
 npm run build:native  # Swift 헬퍼 2개 컴파일. 소스가 더 새로울 때만 재빌드
 npm run build:sheet   # assets/raw/ 의 생성 AI 격자를 스프라이트 시트로 굽는다
+npm run build:tray    # body.png 에서 메뉴바 트레이 아이콘(체형 4단계)을 굽는다
 
 npm run inject -- 75           # 디버그용 사용률 주입 (진짜 statusLine 과 같은 경로)
 
@@ -155,6 +156,16 @@ JS 가 `--row` 로 행을 고르고, CSS 가 상태별로 시트와 `--columns` 
   (104px 일 때 서 있는 모션 대비 면적이 뒹굴기 65% / 기절 76% 였다, 불투명 픽셀 실측).
   `config.js` 의 `OVERLAY_SIZE` 와 `build-sheet.mjs` 의
   `CELL`, `overlay.css` 의 `--cell-w` 는 **셋 다 같아야 한다**
+- **트레이 아이콘은 macOS 템플릿 이미지라 색이 없다 — 검정 + 알파뿐이다.**
+  그래야 OS 가 다크 모드에서 흰색으로 자동 반전해 준다. 색을 넣으면 반전이 막혀
+  검은 배경에 묻힌다. `setTemplateImage(true)` 를 빼도 같은 일이 생긴다.
+  `@2x` 는 파일명 규약이라 `nativeImage` 가 알아서 찾는다 (레티나에서 실제로 쓰이는 건 32px 쪽이다)
+- **트레이의 체형 단계는 실루엣 폭이 아니라 '채움'으로 구분한다.** 원본 그림의 chubby 와
+  fat 은 몸통 폭이 둘 다 117px 로 같아서(높이만 7px 차이) 폭에 기대면 메뉴바에서
+  뒤 세 단계가 한 그림이 된다. 채움 기준도 몸통 bbox 가 아니라 **배 구간**이어야 한다 —
+  bbox 위쪽 1/3 이 가느다란 목·귀라 67% 만 채워도 fat 과 limit 이 같아 보인다
+- **`build-tray.mjs` 의 입력은 커밋된 `body.png` 다.** `assets/raw/` 와 달리 저장소에
+  들어 있으므로 클론한 곳에서도 다시 구울 수 있다. 생성 AI 원본을 다시 찾지 않는다
 - **앱을 재시작하면 `UsageMonitor` 의 누적 상태가 사라진다.** 리셋 감지는 메모리에 든 이전
   샘플과 비교하는 방식이라(`resets_at` 전진 또는 사용률 급락), 재시작 직후 첫 샘플에는
   `reset` 이벤트가 뜨지 않는다. 리셋 전후를 검증할 때 앱을 건드리지 않는다
@@ -174,8 +185,10 @@ JS 가 `--row` 로 행을 고르고, CSS 가 상태별로 시트와 `--columns` 
      변화 없음. **이 알림은 전환이 끝난 뒤에 온다**
   전환 시작 시점을 알려주는 공개 API 가 없어 현재 구조로는 해결 수단이 없다.
   기능에는 영향이 없는 약 0.3초짜리 시각적 artifact 다
-- Dock 아이콘과 트레이가 없어 **종료 수단은 전역 단축키 `Control+Alt+Shift+Q`** 뿐이다
-  (트레이 메뉴는 Phase 5). 단일 인스턴스 락이 걸려 있어 두 번째 실행은 즉시 종료된다
+- Dock 아이콘이 없다. **설정을 건드릴 입구는 메뉴바 트레이뿐이다** — 한도 모드 전환(FR-10)과
+  종료가 거기 있다. 전역 단축키 `Control+Alt+Shift+Q` 도 남겨 둔다. 메뉴바가 가려지는
+  전체화면에서는 그쪽이 유일한 종료 수단이다.
+  단일 인스턴스 락이 걸려 있어 두 번째 실행은 즉시 종료된다
 - `PreToolUse` / `PostToolUse` 훅은 쓰지 않는다. 툴 호출마다 돌아 Claude Code 를 느리게 한다
   (제거한 선행 도구가 그렇게 약 9ms 를 낭비하고 있었다)
 - 훅 클라이언트가 Swift 인 이유는 **statusLine 이 렌더링마다 호출**되기 때문이다.
