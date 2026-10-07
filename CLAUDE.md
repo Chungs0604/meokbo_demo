@@ -25,8 +25,13 @@ npm start          # 실행 (prestart 가 네이티브 자동 빌드)
 npm run dev        # CLAUDE_CS_DEBUG=1 — [tracker]/[usage]/[hook]/[overlay] 로그 + 디버그 패널
 npm run diag       # Electron 띄워 좌표 계산·터미널 판정 검증 (렌더 없이)
 npm run diag:capture  # 오버레이를 실제로 렌더해 PNG 캡처 (투명도 확인용)
+npm run diag:fatness  # 체형 보간(늘어남·줄어듦) 구간을 연속 캡처
+npm run diag:states   # 캐릭터 상태별 캡처 (WORKING / IDLE / EXHAUSTED + 뚱뚱한 WORKING)
 npm run test:usage # UsageMonitor 단위 테스트 (Electron 불필요)
 npm run build:native  # Swift 헬퍼 2개 컴파일. 소스가 더 새로울 때만 재빌드
+npm run build:sheet   # assets/raw/ 의 생성 AI 격자를 스프라이트 시트로 굽는다
+
+npm run inject -- 75           # 디버그용 사용률 주입 (진짜 statusLine 과 같은 경로)
 
 npm run hooks:install    # Claude Code 훅·statusLine 등록 (.claude/settings.json)
 npm run hooks:status     # 등록 상태 확인
@@ -95,17 +100,45 @@ Claude Code ──훅/statusLine──→ hook-client (Swift, 1회성) ──Uni
 화면을 그릴 때만 호출되므로 기절해 있는 동안에는 새 수치가 오지 않는다. 받아둔
 `nextResetAt` 으로 직접 시계를 돌리는 수밖에 없다.
 
-캐릭터는 CSS 도형 플레이스홀더다 (실제 스프라이트는 Phase 5). 체형은 `--fatness`(0~1),
+캐릭터는 스프라이트 시트다 (`renderer/overlay/assets/*.png`). 체형은 `--fatness`(0~1),
 밥 먹는 속도는 `--intake`(0~1), 상태는 `data-character`, 체형 단계는 `data-stage` 로 받는다.
 `--fatness` 같은 합성 변수를 쓰는 선언은 **그 변수가 보이는 위치에 두어야 한다** —
 미등록 커스텀 프로퍼티는 선언된 요소에서 값이 굳어 내려오기 때문에, `:root` 에 선언한
 `--eat-duration` 은 `.stage` 에 꽂은 `--slow` 를 보지 못한다.
+
+### 스프라이트 렌더링
+
+시트 규약은 **행 = 체형 단계(`config.js` 의 `FATNESS_STAGES` 순서), 열 = 프레임**이다.
+JS 가 `--row` 로 행을 고르고, CSS 가 상태별로 시트와 `--columns` 를 갈아끼운다 —
+`body`(1열, 정지) / `eat`(8열) / `roll`(6열) / `faint`(4열).
+
+- **프레임 재생은 모션 공용 `@keyframes frames` 하나다.** 열을 한 칸씩 밀기만 하므로
+  새 모션을 붙일 때는 시트와 `--columns`·`steps()` 숫자만 주면 된다
+- **`animation` 은 하나의 목록이라 한쪽을 따로 선언하면 다른 쪽이 지워진다.** 프레임 재생과
+  헥헥거림이 그래서 `--anim-frames` / `--anim-pant` 로 자리를 나눠 갖는다.
+  (스프라이트 교체 때 헥헥거림이 한 번 사라진 적이 있다)
+- **체형 보간(FR-12)은 레이어 2장 크로스페이드다.** 그림이 4단계뿐이라 폭을 연속으로 늘리는
+  방식을 쓸 수 없다. 새 레이어를 페이드 인 시킬 때 **이전 레이어도 같이 지워야 한다** —
+  안 지우면 실루엣이 달라 옛 몸이 비쳐 두 겹으로 보인다 (줄어들 때만 드러난다)
+- 누운 자세(`IDLE`/`EXHAUSTED`)는 통통 튀는 `bob` 을 끈다. 움직임은 프레임이 담당한다
 
 ## 함정
 
 - **`.claude/settings.json` 은 `.gitignore` 에 있다.** 훅 커맨드에 절대경로가 들어가
   머신마다 다르기 때문이다. 새로 클론하면 `npm run hooks:install` 을 먼저 실행해야
   사용량 데이터가 들어온다
+- **`assets/raw/` 도 `.gitignore` 에 있다.** 생성 AI 원본이 59MB 라 구운 시트만 커밋한다.
+  즉 **클론한 저장소에서는 시트를 다시 구울 수 없다** — 스케일이나 셀 크기를 바꾸려면
+  원본이 필요하다 (백업: `~/Desktop/meokbo-image/`). 양쪽을 지우지 않는다
+- **`nativeImage.resize()` 는 알파를 날린다** (결과의 91%가 불투명해졌다). 시트를 구울 때는
+  `build-sheet.mjs` 가 직접 구현한 알파 가중 박스 필터를 쓴다. `resize()` 로 되돌리지 않는다
+- **생성 AI 는 "프레임을 충분히 띄워라"라고 해도 캔버스의 0.9% 까지 붙여 준다.** 격자 칸
+  분리 기준을 2% 로 잡았다가 한 행이 통째로 한 칸으로 잡혀서 0.4% 로 내렸다.
+  새 에셋을 요청할 때는 **간격을 캔버스 폭의 10% 이상으로 수치를 박아** 말한다
+- **셀 높이와 폭은 제약이 다르다.** 높이는 창 배치가 묶어서 94px 가 상한이다 (넘으면 메뉴바
+  아래 터미널에서 캐릭터가 창 안으로 파고든다, `npm run diag` 실측). 폭은 제약이 없어
+  누운 자세를 위해 104px 로 넓혔다. `config.js` 의 `OVERLAY_SIZE` 와 `build-sheet.mjs` 의
+  `CELL` 은 **반드시 같아야 한다**
 - **앱을 재시작하면 `UsageMonitor` 의 누적 상태가 사라진다.** 리셋 감지는 메모리에 든 이전
   샘플과 비교하는 방식이라(`resets_at` 전진 또는 사용률 급락), 재시작 직후 첫 샘플에는
   `reset` 이벤트가 뜨지 않는다. 리셋 전후를 검증할 때 앱을 건드리지 않는다
