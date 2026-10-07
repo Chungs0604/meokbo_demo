@@ -109,9 +109,21 @@ body {
   --anim-frames: frames var(--eat-duration) steps(8) infinite;
 }
 
-/* IDLE: 터미널 위에서 좌우로 뒹군다 (FR-21). */
+/*
+ * IDLE: 터미널 위에 누워 뒹군다 (FR-21).
+ *
+ * 전용 시트(roll.png)를 쓴다. 통통 튀는 모션은 끈다 — 누워 있는 캐릭터가
+ * 위아래로 튀면 안 되고, 뒹구는 움직임은 프레임이 담당한다.
+ * 기절과 실루엣이 비슷하지만 눈을 뜨고 있고 파리가 없어서 구분된다.
+ */
 .stage[data-character='IDLE'] .character {
-  animation: roll var(--roll-duration) ease-in-out infinite;
+  animation: none;
+}
+
+.stage[data-character='IDLE'] .layer {
+  --columns: 6;
+  background-image: url('assets/roll.png');
+  --anim-frames: frames var(--roll-duration) steps(6) infinite;
 }
 
 /*
@@ -145,16 +157,6 @@ body {
   }
   50% {
     transform: translateY(-4px);
-  }
-}
-
-@keyframes roll {
-  0%,
-  100% {
-    transform: translateY(0) rotate(-9deg);
-  }
-  50% {
-    transform: translateY(-2px) rotate(9deg);
   }
 }
 
