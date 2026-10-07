@@ -229,5 +229,39 @@ console.log('--- StopFailure 기절과 해제 (FR-22 / FR-13) ---');
   check('한도 리셋으로만 풀린다', sm.state, WORKING);
 }
 
+console.log('--- 한도 리셋 트림 (FR-13) ---');
+{
+  const { HIDDEN, WORKING, IDLE, EXHAUSTED, BURP } = CHARACTER_STATES;
+  const sm = new StateMachine();
+  sm.setVisible(true);
+  sm.setUsage({ usedPercentage: 100, isIdle: true });
+  check('한도 소진 상태에서 시작', sm.state, EXHAUSTED);
+
+  // 실제 순서: UsageMonitor 가 reset 을 먼저 쏘고 그 다음 0% 스냅샷을 쏜다.
+  sm.clearExhausted();
+  sm.startBurp();
+  check('리셋 → BURP', sm.state, BURP);
+
+  sm.setUsage({ usedPercentage: 0, isIdle: true });
+  check('연출 중에는 무활동이어도 BURP 를 유지한다', sm.state, BURP);
+
+  sm.endBurp();
+  check('연출이 끝나면 평소 규칙으로 돌아간다', sm.state, IDLE);
+
+  // 트림 도중 다시 막히면 연출보다 "못 쓴다"가 먼저다.
+  sm.startBurp();
+  sm.markExhausted();
+  check('StopFailure 는 BURP 보다 우선', sm.state, EXHAUSTED);
+  sm.clearExhausted();
+  check('풀리면 남아 있던 BURP 로 돌아온다', sm.state, BURP);
+
+  sm.setVisible(false);
+  check('대상 상실은 BURP 보다도 우선', sm.state, HIDDEN);
+  sm.setVisible(true);
+  sm.endBurp();
+  sm.setUsage({ usedPercentage: 0, isIdle: false });
+  check('연출 후 작업을 재개하면 WORKING', sm.state, WORKING);
+}
+
 console.log(`\n${failed === 0 ? 'ALL PASS' : `${failed}건 실패`}  (통과 ${passed} / 전체 ${passed + failed})`);
 process.exit(failed === 0 ? 0 : 1);

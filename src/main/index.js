@@ -1,6 +1,6 @@
 import process from 'node:process';
 import { app, globalShortcut } from 'electron';
-import { DEBUG, DEFAULT_LIMIT_MODE, QUIT_SHORTCUT } from './config.js';
+import { BURP_DURATION_MS, DEBUG, DEFAULT_LIMIT_MODE, QUIT_SHORTCUT } from './config.js';
 import { loadUserConfig, configPath } from './user-config.js';
 import { OverlayWindow } from './overlay-window.js';
 import { WindowTracker } from './window-tracker.js';
@@ -23,9 +23,39 @@ let usage = null;
 let character = null;
 /** 폴링마다 같은 에러를 쏟지 않도록 직전 메시지를 기억한다. */
 let lastTrackerErrorMessage = null;
+/** 트림 연출을 끝낼 타이머. StateMachine 은 타이머를 들지 않는다 (FR-13). */
+let burpTimer = null;
+/**
+ * 트림 연출 동안 붙잡아 둔 사용량 스냅샷 (FR-13).
+ *
+ * 리셋은 `reset` 다음 줄에서 0% 짜리 `usage` 를 바로 내보낸다. 그대로 흘려보내면
+ * 체형이 트림과 **동시에** 줄어서 "트림 연출 후 복귀" 가 아니라 한 동작으로 뭉개진다.
+ * 연출이 끝날 때 마지막 것 하나만 보낸다 — 중간 값들은 어차피 화면에 못 들어간다.
+ */
+let heldUsage = null;
 
 function log(...args) {
   if (DEBUG) console.log(...args);
+}
+
+/**
+ * 한도 리셋 트림 연출 (FR-13).
+ *
+ * 연출이 끝나면 붙잡아 둔 사용률을 흘려보내 홀쭉한 몸으로 넘어간다.
+ * 리셋이 연달아 오면(5시간·주간이 같은 샘플에서 함께 넘어가는 경우) 타이머를 다시 건다.
+ */
+function startBurp() {
+  character.startBurp();
+  clearTimeout(burpTimer);
+  burpTimer = setTimeout(() => {
+    burpTimer = null;
+    character.endBurp();
+    if (heldUsage) {
+      log('[usage] 트림 끝. 붙잡아 둔 체형을 내보낸다:', heldUsage.stage);
+      overlay.send('overlay:usage', heldUsage);
+      heldUsage = null;
+    }
+  }, BURP_DURATION_MS);
 }
 
 async function bootstrap() {
@@ -72,12 +102,15 @@ async function bootstrap() {
 
   usage.on('usage', (snapshot) => {
     log('[usage]', JSON.stringify(snapshot));
-    overlay.send('overlay:usage', snapshot);
+    if (burpTimer) heldUsage = snapshot;
+    else overlay.send('overlay:usage', snapshot);
+    // 상태 판정은 미루지 않는다. 체형만 늦게 보일 뿐 기절·복귀는 제때 갈려야 한다.
     character.setUsage(snapshot);
   });
   usage.on('reset', ({ mode }) => {
     log('[usage] 한도 리셋:', mode);
     character.clearExhausted();   // 한도가 풀려야 기절에서 깨어난다 (FR-13)
+    startBurp();
   });
   usage.on('complete', ({ sessionId }) => log('[usage] 작업 완료:', sessionId));
   usage.on('exhausted', ({ resetsAt }) => {

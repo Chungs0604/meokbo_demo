@@ -144,6 +144,26 @@ body {
   --anim-frames: frames 2.4s steps(4) infinite;
 }
 
+/*
+ * BURP: 한도가 초기화되면 한 번 트림하고 홀쭉해진다 (FR-13).
+ *
+ * 다른 모션과 달리 **한 번만 재생한다**(iteration-count 1). 길이는 config.js 의
+ * `BURP_DURATION_MS` 와 같아야 한다 — main 이 그 타이머로 상태를 되돌린다.
+ *
+ * `forwards` 로 마지막 칸에 세워두지 않는다. `frames` 는 열 수만큼 통째로 미는
+ * 키프레임이라 100% 지점은 **마지막 칸이 아니라 시트 밖**이다. 채워두면 빈 칸이 남는다.
+ * 재생이 끝나면 첫 칸으로 돌아가지만 같은 순간 main 이 상태를 바꾸므로 보이지 않는다.
+ *
+ * `--slow` 를 곱하지 않는 것도 같은 이유다. 체형마다 길이가 달라지면 타이머와 어긋난다.
+ *
+ * 키프레임 이름이 `frames` 가 아닌 것도 필수다 — 아래 `frames-once` 주석 참고.
+ */
+.stage[data-character='BURP'] .layer {
+  --columns: 6;
+  background-image: url('assets/burp.png');
+  --anim-frames: frames-once 1.8s steps(6) 1;
+}
+
 /* 뚱뚱해지면 숨이 가쁘다 (PRD §2.2 / FR-21). */
 .stage[data-stage='fat'] .layer,
 .stage[data-stage='limit'] .layer {
@@ -162,9 +182,25 @@ body {
 
 /*
  * 시트의 열을 왼쪽으로 한 칸씩 민다. steps() 와 짝을 이뤄야 프레임이 또렷하다.
- * 열 수가 모션마다 달라서 --columns 로 받는다 (밥먹기 8, 기절 4).
+ * 열 수가 모션마다 달라서 --columns 로 받는다 (밥먹기 8, 뒹굴기·트림 6, 기절 4).
  */
 @keyframes frames {
+  from {
+    background-position-x: 0;
+  }
+  to {
+    background-position-x: calc(var(--cell-w) * var(--columns) * -1);
+  }
+}
+
+/*
+ * 내용은 `frames` 와 같지만 **이름이 달라야 한다.**
+ * 이름이 같으면 돌고 있던 애니메이션이 시작 시각을 유지한 채 이어진다. 그러면
+ * 한 번만 재생하는 트림이 **이미 지나간 시간만큼 건너뛴 채로** 시작한다 —
+ * 밥 먹다 리셋되면(경과 시간이 1.8초보다 크다) 연출이 통째로 사라진다.
+ * 실측: 기절에서 넘어온 캡처가 첫 칸에 멈춰 있었다.
+ */
+@keyframes frames-once {
   from {
     background-position-x: 0;
   }

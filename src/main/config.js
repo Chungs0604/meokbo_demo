@@ -103,6 +103,18 @@ export const FATNESS_STAGES = [
 export const EXHAUSTED_PERCENTAGE = 100;
 
 /**
+ * 한도 리셋 트림 연출 길이 (FR-13).
+ *
+ * `burp.png` 6프레임을 한 번만 재생하는 시간이다. **`overlay.css` 의 BURP 규칙과
+ * 같은 값이어야 한다** — main 이 이 타이머로 상태를 되돌리므로, CSS 가 더 길면
+ * 연출이 중간에 잘리고 더 짧으면 마지막 칸에서 멈춰 선 채로 기다린다.
+ *
+ * 이 길이 동안 체형 스냅샷 전달을 미룬다. 트림과 홀쭉해지는 것이 겹치면
+ * "트림 후 복귀"(FR-13)가 아니라 둘이 동시에 일어나는 것처럼 보인다.
+ */
+export const BURP_DURATION_MS = 1800;
+
+/**
  * 토큰 소모 속도를 내는 창 길이 (FR-20 평활화).
  *
  * statusLine 호출 간격이 불규칙해서 "직전 샘플과의 차이 / 그 간격" 으로 재면

@@ -195,6 +195,8 @@ async function main() {
         { state: 'IDLE', percent: 20, tokensPerMinute: 0 },
         { state: 'WORKING', percent: 80, tokensPerMinute: 18000, label: 'WORKING-fat' },
         { state: 'EXHAUSTED', percent: 100, tokensPerMinute: 0 },
+        // 트림은 1.8초 한 번 재생이라 900ms 뒤에 찍으면 한창 터지는 칸이 걸린다 (FR-13).
+        { state: 'BURP', percent: 100, tokensPerMinute: 0 },
       ];
 
       for (const { state, percent, tokensPerMinute, label } of cases) {
