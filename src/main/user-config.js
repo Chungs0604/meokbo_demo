@@ -36,3 +36,23 @@ export function loadUserConfig() {
     return { ...DEFAULTS };
   }
 }
+
+/**
+ * `patch` 의 키만 덮어써 저장한다. 사용자가 손으로 적어 둔 다른 키
+ * (터미널 화이트리스트 등)를 날리지 않으려고 저장 직전에 다시 읽는다.
+ *
+ * 임시 파일에 쓰고 rename 하는 이유는 저장 도중 앱이 죽으면 반쯤 쓰인 JSON 이 남아
+ * 다음 실행에서 설정을 통째로 잃기 때문이다. rename 은 같은 볼륨에서 원자적이다.
+ *
+ * 저장 실패는 삼키지 않는다 — 호출한 쪽이 사용자에게 알릴지 정한다.
+ */
+export function saveUserConfig(patch) {
+  const file = configPath();
+  const merged = { ...loadUserConfig(), ...patch };
+  const temp = `${file}.tmp`;
+
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(temp, `${JSON.stringify(merged, null, 2)}\n`, 'utf8');
+  fs.renameSync(temp, file);
+  return merged;
+}
