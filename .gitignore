@@ -10,7 +10,7 @@ native/macos/bin/
 .claude/settings.local.json
 *.bak-*
 
-# 생성 AI 원본 프레임. 29MB 라 저장소에 넣지 않는다.
+# 생성 AI 원본 프레임. 59MB 라 저장소에 넣지 않는다.
 # 구워낸 시트(src/renderer/overlay/assets/*.png)만 커밋하고,
 # 다시 구우려면 원본을 assets/raw/<모션>/<체형>[-<번호>].png 로 넣고 npm run build:sheet 한다.
 assets/raw/
