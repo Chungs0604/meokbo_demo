@@ -10,16 +10,19 @@ export const DEBUG = process.env.CLAUDE_CS_DEBUG === '1';
 export const POLL_INTERVAL_MS = 250;
 
 /**
- * 캐릭터 오버레이 윈도우 크기.
- * 박스가 캐릭터 실제 높이보다 크면 위쪽에 빈 공간이 생겨, 창이 화면 상단 근처일 때
- * 불필요하게 화면 밖으로 밀려난다. 그래서 박스를 캐릭터 최대 크기에 맞춰 둔다.
- * 실제 에셋이 들어오는 Phase 5 에서 재조정한다.
+ * 캐릭터 오버레이 윈도우 크기 = 스프라이트 시트의 셀 크기.
+ *
+ * Phase 1 플레이스홀더는 120x84 로 가로가 길었는데, 실제 캐릭터(토끼)는 귀 때문에
+ * 세로로 길다(폭:높이 = 0.59). 그래서 비율이 뒤집혔다.
+ * **scripts/build-sheet.mjs 의 CELL 과 반드시 같아야 한다.** 다르면 프레임이 잘린다.
  */
-export const OVERLAY_SIZE = { width: 120, height: 84 };
+export const OVERLAY_SIZE = { width: 104, height: 92 };
 
 /**
  * 캐릭터는 창 상단 테두리에 "올라앉은" 형태여야 한다 (FR-02).
  * 발이 테두리에 살짝 묻히도록 아래로 내리는 픽셀 수.
+ * 스프라이트는 셀 바닥에서 4px(build-sheet 의 FOOT_MARGIN) 띄워져 있으므로,
+ * 실제로 발이 테두리 아래로 묻히는 깊이는 이 값에서 4px 를 뺀 만큼이다.
  */
 export const SIT_SINK_PX = 8;
 /** 창 가로폭 기준 캐릭터 중심 위치 비율. 0 = 왼쪽 끝, 1 = 오른쪽 끝. */

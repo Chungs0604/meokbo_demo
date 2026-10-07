@@ -4,22 +4,21 @@
     <meta charset="utf-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'none'; style-src 'self'; script-src 'self';"
+      content="default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self';"
     />
     <title>claude-cs overlay</title>
     <link rel="stylesheet" href="overlay.css" />
   </head>
   <body>
-    <!-- Phase 1 플레이스홀더. --fatness(0~1) 로 체형을 바꾼다. Phase 5 에서 스프라이트로 교체. -->
+    <!--
+      캐릭터는 스프라이트 시트다 (행=체형 단계, 열=프레임).
+      레이어가 둘인 이유는 체형이 바뀔 때 겹쳐서 크로스페이드하기 위해서다 (FR-12).
+      그림은 4단계뿐이라 폭을 연속으로 늘리던 플레이스홀더와 달리 경계에서 섞어야 한다.
+    -->
     <div class="stage" id="stage" data-state="hidden">
       <div class="character" id="character">
-        <div class="body">
-          <div class="eye eye--left"></div>
-          <div class="eye eye--right"></div>
-          <div class="mouth"></div>
-        </div>
-        <div class="foot foot--left"></div>
-        <div class="foot foot--right"></div>
+        <div class="layer" id="layer-a"></div>
+        <div class="layer" id="layer-b"></div>
       </div>
       <!-- 기절했을 때만 보이는 리셋 카운트다운 (FR-22). -->
       <div class="countdown" id="countdown"></div>
