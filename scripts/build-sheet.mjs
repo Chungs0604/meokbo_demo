@@ -478,9 +478,14 @@ function buildSheet(group, byStage) {
   STAGE_ORDER.forEach((stage, row) => {
     let frames = byStage.get(stage);
     if (!frames?.length) {
-      // 기절처럼 한 체형만 만든 모션은 slim 자체가 없다. 있는 것 중 첫 번째로 메운다.
-      frames = byStage.get('slim') ?? [...byStage.values()][0];
-      filled.push(stage);
+      /*
+       * 기절처럼 한 체형만 만든 모션이 있다. 행이 비면 그 체형에서 캐릭터가 사라지므로
+       * 있는 것으로 메운다. **어느 체형으로 메웠는지 이름을 남긴다** — 기절은 limit 한 벌만
+       * 있는데 로그는 "홀쭉으로 메웠다"라고 찍어서 사실과 달랐다.
+       */
+      const donor = byStage.get('slim')?.length ? 'slim' : [...byStage.keys()][0];
+      frames = byStage.get(donor);
+      filled.push(`${stage}←${donor}`);
     }
     if (!frames?.length) return;
 
@@ -505,7 +510,8 @@ function buildSheet(group, byStage) {
   });
 
   if (filled.length) {
-    console.error(`  ⚠ ${filled.join(', ')} 프레임이 없어 홀쭉으로 메웠다. 해당 체형에서는 같은 그림이 나온다`);
+    console.error(`  ⚠ 프레임이 없어 다른 체형으로 메웠다: ${filled.join(', ')}.`
+      + ' 해당 체형에서는 같은 그림이 나온다');
   }
 
   const out = nativeImage.createFromBitmap(sheet, { width: sheetW, height: sheetH });
