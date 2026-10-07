@@ -28,10 +28,15 @@ const SCALE = 2;
  * 높이는 창 배치가 묶는다 — 캐릭터는 터미널 창 위에 앉는데(FR-02) 메뉴바 바로 아래
  * 있는 창은 공간이 없어 클램프되고, 셀이 94px 를 넘으면 캐릭터가 창 안으로 파고든다.
  * 폭은 그런 제약이 없다. 캐릭터는 셀 가운데에 그려지므로 폭을 늘려도 화면상 위치가
- * 변하지 않고, 남는 좌우는 투명하다. 그래서 누운 자세(기절)처럼 가로로 긴 포즈를
- * 위해 폭만 넉넉히 준다.
+ * 변하지 않고, 남는 좌우는 투명하다. 그래서 누운 자세처럼 가로로 긴 포즈를 위해
+ * 폭만 넉넉히 준다.
+ *
+ * **누운 포즈의 크기는 사실상 이 폭이 정한다.** 높이를 CHAR_HEIGHT 에 맞추면 뒹굴기는
+ * 213px 까지 벌어져서 어차피 폭 상한에 걸리기 때문이다. 104px 일 때 서 있는 모션 대비
+ * 면적이 뒹굴기 65% / 기절 76% 로 눈에 띄게 작았다(불투명 픽셀 실측). 124px 에서
+ * 뒹굴기 98% / 기절 110% 가 된다.
  */
-const CELL = { width: 104, height: 92 };
+const CELL = { width: 124, height: 92 };
 /**
  * 셀 안에서 캐릭터가 차지할 최대 높이. 위쪽 여백은 통통 튀는 모션(-4px)이 쓴다.
  *
@@ -175,92 +180,134 @@ function parseName(file) {
 }
 
 /**
- * 한 축의 히스토그램에서 "덩어리" 구간들을 찾는다.
- * 틈이 minGap 보다 좁으면 같은 덩어리로 본다 — 캐릭터 안에서도 귀와 몸 사이처럼
- * 픽셀이 잠깐 끊기는 곳이 있어서, 작은 틈까지 경계로 치면 한 캐릭터가 쪼개진다.
- */
-function bands(counts, minCount, minGap) {
-  const found = [];
-  let start = -1;
-  let gap = 0;
-
-  for (let i = 0; i < counts.length; i++) {
-    if (counts[i] >= minCount) {
-      if (start < 0) start = i;
-      gap = 0;
-      continue;
-    }
-    if (start < 0) continue;
-    gap++;
-    if (gap >= minGap) {
-      found.push([start, i - gap]);
-      start = -1;
-      gap = 0;
-    }
-  }
-  if (start >= 0) found.push([start, counts.length - 1 - gap]);
-  return found;
-}
-
-/**
  * 여러 포즈가 격자로 들어 있는 한 장을 프레임별 사각형으로 쪼갠다.
  *
  * 생성 AI 에게 프레임을 한 장씩 요청하면 너무 느리다. 격자로 한 번에 받되
  * **셀 크기를 모델에게 맡기지 않는 것**이 요점이다 — 빈 공간을 찾아 우리가 자른다.
  * 자른 뒤에는 각 프레임을 발끝 기준으로 다시 정렬하므로 격자가 삐뚤어도 상관없다.
  *
+ * 칸은 **2차원 연결 덩어리**로 센다. 행·열 히스토그램으로 자르던 방식은 트림 모션에서
+ * 무너졌다 — 입에서 나온 구름이 옆 칸 캐릭터와 **닿지 않는데도 x 범위가 겹쳐서**
+ * 한 칸으로 잡혔다(실측: 2x3 격자가 chubby 4칸 / fat·slim 5칸). 투영이 아니라
+ * 실제로 이어진 픽셀을 세면 떨어져 있는 그림은 언제나 갈라진다.
+ *
  * 읽는 순서는 왼쪽→오른쪽, 위→아래다.
  */
 function segment(bitmap, width, height) {
-  const minCount = Math.max(3, Math.round(width * 0.002));
-  /*
-   * 칸 사이 틈의 최소 폭.
-   *
-   * 생성 AI 는 "충분히 띄워라"라고 해도 꽤 빡빡하게 붙여 준다 — 실측하니
-   * 2400px 격자에서 33px, 1200px 격자에서 11px 까지 좁았다(캔버스의 0.9~1.5%).
-   * 처음에 2% 로 잡았더니 한 행이 통째로 한 칸으로 잡혔다.
-   * 0.4% 로 내려 실측 최솟값 아래에 두되, 캐릭터가 쪼개지지는 않는다 —
-   * 한 행 높이 전체로 열을 세므로 캐릭터 안에 완전히 빈 열은 거의 생기지 않는다.
-   */
-  const minGapY = Math.max(3, Math.round(height * 0.004));
-  const minGapX = Math.max(3, Math.round(width * 0.004));
-
-  const rowCounts = new Uint32Array(height);
-  for (let y = 0; y < height; y++) {
-    let n = 0;
-    for (let x = 0; x < width; x++) {
-      if (bitmap[(y * width + x) * 4 + 3] >= 16) n++;
-    }
-    rowCounts[y] = n;
-  }
-
+  const label = new Int32Array(width * height).fill(-1);
   const boxes = [];
-  for (const [y0, y1] of bands(rowCounts, minCount, minGapY)) {
-    const colCounts = new Uint32Array(width);
-    for (let y = y0; y <= y1; y++) {
-      for (let x = 0; x < width; x++) {
-        if (bitmap[(y * width + x) * 4 + 3] >= 16) colCounts[x]++;
+  const stack = [];
+
+  for (let seed = 0; seed < width * height; seed++) {
+    if (label[seed] >= 0 || bitmap[seed * 4 + 3] < 16) continue;
+
+    const id = boxes.length;
+    const box = { x: seed % width, y: (seed / width) | 0, width: 1, height: 1, area: 0, ids: [id] };
+    let minX = box.x;
+    let maxX = box.x;
+    let minY = box.y;
+    let maxY = box.y;
+
+    label[seed] = id;
+    stack.push(seed);
+    while (stack.length) {
+      const i = stack.pop();
+      const x = i % width;
+      const y = (i / width) | 0;
+      box.area++;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+
+      // 8방향. 4방향으로만 이으면 대각선으로 이어진 가는 선(구름 꼬리)이 끊긴다.
+      for (let dy = -1; dy <= 1; dy++) {
+        const ny = y + dy;
+        if (ny < 0 || ny >= height) continue;
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = x + dx;
+          if (nx < 0 || nx >= width) continue;
+          const n = ny * width + nx;
+          if (label[n] >= 0 || bitmap[n * 4 + 3] < 16) continue;
+          label[n] = id;
+          stack.push(n);
+        }
       }
     }
-    for (const [x0, x1] of bands(colCounts, minCount, minGapX)) {
-      boxes.push({ x: x0, y: y0, width: x1 - x0 + 1, height: y1 - y0 + 1 });
-    }
+
+    box.x = minX;
+    box.y = minY;
+    box.width = maxX - minX + 1;
+    box.height = maxY - minY + 1;
+    boxes.push(box);
   }
 
-  // 배경에 남은 잡티가 한 칸으로 잡히는 일이 있다(실측: 8칸짜리 격자에서 9칸이 나왔다).
-  // 칸 크기는 서로 비슷할 수밖에 없으므로, 중앙값보다 한참 작은 것은 캐릭터가 아니다.
-  if (boxes.length < 2) return boxes;
-  const areas = boxes.map((b) => b.width * b.height).sort((a, b) => a - b);
-  const median = areas[Math.floor(areas.length / 2)];
-  return boxes.filter((b) => b.width * b.height >= median * 0.2);
+  if (!boxes.length) return { cells: boxes, label };
+
+  /*
+   * 큰 덩어리만 칸으로 친다. 나머지는 **가장 가까운 칸에 붙인다** —
+   * 입에서 떨어져 나온 연기나 반짝임은 캐릭터와 이어져 있지 않지만 같은 프레임의 일부다.
+   * 압축 잡티도 여기서 흡수되므로 따로 거를 필요가 없다.
+   *
+   * 기준이 중앙값이 아니라 **최댓값**인 이유: 한 칸에서 떨어져 나오는 조각이 수십 개라
+   * (기절 모션의 파리처럼) 중앙값이 잡티 쪽으로 쏠린다. 실측으로 155덩어리짜리 격자에서
+   * 중앙값 기준은 16칸을 내놨다. 한 격자 안의 캐릭터는 크기가 비슷하므로 최댓값이 안정적이다.
+   */
+  const largest = Math.max(...boxes.map((b) => b.area));
+  const cells = boxes.filter((b) => b.area >= largest * 0.3);
+
+  for (const piece of boxes) {
+    if (cells.includes(piece)) continue;
+    let best = null;
+    let bestDistance = Infinity;
+    for (const cell of cells) {
+      const dx = Math.max(0, cell.x - (piece.x + piece.width), piece.x - (cell.x + cell.width));
+      const dy = Math.max(0, cell.y - (piece.y + piece.height), piece.y - (cell.y + cell.height));
+      const distance = dx * dx + dy * dy;
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = cell;
+      }
+    }
+    const right = Math.max(best.x + best.width, piece.x + piece.width);
+    const bottom = Math.max(best.y + best.height, piece.y + piece.height);
+    best.x = Math.min(best.x, piece.x);
+    best.y = Math.min(best.y, piece.y);
+    best.width = right - best.x;
+    best.height = bottom - best.y;
+    best.ids.push(...piece.ids);
+  }
+
+  // 읽는 순서로 되돌린다. 행이 삐뚤 수 있어 y 중심을 칸 높이 절반 안에서 묶는다.
+  const heights = cells.map((b) => b.height).sort((a, b) => a - b);
+  const tolerance = heights[Math.floor(heights.length / 2)] / 2;
+  const rows = [];
+  for (const cell of [...cells].sort((a, b) => (a.y + a.height / 2) - (b.y + b.height / 2))) {
+    const center = cell.y + cell.height / 2;
+    const row = rows[rows.length - 1];
+    if (row && center - row.center <= tolerance) row.cells.push(cell);
+    else rows.push({ center, cells: [cell] });
+  }
+  return { cells: rows.flatMap((row) => row.cells.sort((a, b) => a.x - b.x)), label };
 }
 
-/** 격자에서 잘라낸 한 칸을 독립된 이미지 버퍼로 뽑는다. */
-function cropBitmap(src, srcW, box) {
+/**
+ * 격자에서 잘라낸 한 칸을 독립된 이미지 버퍼로 뽑는다.
+ *
+ * 칸은 사각형이라 **이웃 칸과 겹칠 수 있다** — 트림 구름이 옆 칸 영역까지 뻗으면
+ * 옆 칸을 자를 때 그 조각이 같이 딸려 온다(실측: 4·5번 프레임 가장자리에 구름 부스러기).
+ * 그래서 이 칸에 속한 덩어리가 아닌 픽셀은 지우고 가져온다.
+ */
+function cropBitmap(src, srcW, box, label) {
+  const mine = new Set(box.ids);
   const out = Buffer.alloc(box.width * box.height * 4);
   for (let y = 0; y < box.height; y++) {
     const from = ((box.y + y) * srcW + box.x) * 4;
     src.copy(out, y * box.width * 4, from, from + box.width * 4);
+    for (let x = 0; x < box.width; x++) {
+      if (mine.has(label[(box.y + y) * srcW + box.x + x])) continue;
+      out.fill(0, (y * box.width + x) * 4, (y * box.width + x) * 4 + 4);
+    }
   }
   return out;
 }
@@ -413,6 +460,21 @@ function buildSheet(group, byStage) {
     console.log(`  가로가 셀을 넘어 전체를 ${(shrink * 100).toFixed(0)}% 로 줄였다`);
   }
 
+  /*
+   * 최종 캐릭터 크기를 1x 기준으로 알린다.
+   * 누운 포즈는 폭에 막혀 그룹 전체가 줄어들기 때문에, 서 있는 모션보다 몸이 작아진다.
+   * 셀 폭을 얼마나 줘야 하는지는 이 숫자를 보고 정한다.
+   */
+  const footprint = all.reduce((acc, f) => {
+    const scale = scaleOf(f) * shrink;
+    return {
+      width: Math.max(acc.width, f.box.width * scale / SCALE),
+      height: Math.max(acc.height, f.box.height * scale / SCALE),
+    };
+  }, { width: 0, height: 0 });
+  console.log(`  캐릭터 최대 ${footprint.width.toFixed(0)}x${footprint.height.toFixed(0)}px`
+    + ` (셀 ${CELL.width}x${CELL.height}, 목표 높이 ${CHAR_HEIGHT})`);
+
   const sheetW = cellW * columns;
   const sheetH = cellH * STAGE_ORDER.length;
   const sheet = Buffer.alloc(sheetW * sheetH * 4);
@@ -421,9 +483,14 @@ function buildSheet(group, byStage) {
   STAGE_ORDER.forEach((stage, row) => {
     let frames = byStage.get(stage);
     if (!frames?.length) {
-      // 기절처럼 한 체형만 만든 모션은 slim 자체가 없다. 있는 것 중 첫 번째로 메운다.
-      frames = byStage.get('slim') ?? [...byStage.values()][0];
-      filled.push(stage);
+      /*
+       * 기절처럼 한 체형만 만든 모션이 있다. 행이 비면 그 체형에서 캐릭터가 사라지므로
+       * 있는 것으로 메운다. **어느 체형으로 메웠는지 이름을 남긴다** — 기절은 limit 한 벌만
+       * 있는데 로그는 "홀쭉으로 메웠다"라고 찍어서 사실과 달랐다.
+       */
+      const donor = byStage.get('slim')?.length ? 'slim' : [...byStage.keys()][0];
+      frames = byStage.get(donor);
+      filled.push(`${stage}←${donor}`);
     }
     if (!frames?.length) return;
 
@@ -448,7 +515,8 @@ function buildSheet(group, byStage) {
   });
 
   if (filled.length) {
-    console.error(`  ⚠ ${filled.join(', ')} 프레임이 없어 홀쭉으로 메웠다. 해당 체형에서는 같은 그림이 나온다`);
+    console.error(`  ⚠ 프레임이 없어 다른 체형으로 메웠다: ${filled.join(', ')}.`
+      + ' 해당 체형에서는 같은 그림이 나온다');
   }
 
   const out = nativeImage.createFromBitmap(sheet, { width: sheetW, height: sheetH });
@@ -474,10 +542,10 @@ app.whenReady().then(() => {
       if (entry.grid) {
         // 격자 한 장에서 포즈를 잘라낸다. 잘라낸 칸이 그대로 한 프레임이 된다.
         const sheet = prepare(entry.grid);
-        const boxes = segment(sheet.bitmap, sheet.width, sheet.height);
-        source = `격자 ${boxes.length}칸`;
-        for (const box of boxes) {
-          const bitmap = cropBitmap(sheet.bitmap, sheet.width, box);
+        const { cells, label } = segment(sheet.bitmap, sheet.width, sheet.height);
+        source = `격자 ${cells.length}칸`;
+        for (const box of cells) {
+          const bitmap = cropBitmap(sheet.bitmap, sheet.width, box, label);
           prepared.push({
             file: entry.grid,
             width: box.width,
