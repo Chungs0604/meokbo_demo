@@ -3,15 +3,15 @@
 > [PRD.md](./PRD.md) 의 로드맵을 단계별 체크리스트로 분해한 문서.
 > 작업이 끝날 때마다 체크박스를 갱신한다.
 
-**진행 상황**: Phase 1~3 완료 · Phase 5 진행 중 (모드 전환 UI 는 Phase 5 로 이관)
+**진행 상황**: Phase 1~3 완료 · Phase 5 진행 중
 
 | Phase | 상태 |
 | --- | --- |
 | Phase 1 — Electron 환경 + 창 추적 | ✅ **완료** (멀티 모니터만 미검증) |
-| Phase 2 — 사용량 데이터 | ✅ **완료** (모드 전환 UI 는 Phase 5 로 이관) |
+| Phase 2 — 사용량 데이터 | ✅ **완료** (모드 전환 UI 는 Phase 5 트레이에서 완성) |
 | Phase 3 — 캐릭터 상태 머신 | ✅ 완료 (PEEK 전이는 Phase 4) |
 | Phase 4 — 빼꼼 완료 알림 | ⬜ 대기 |
-| Phase 5 — 에셋·연출 | 🔶 진행 중 (에셋 파이프라인·모션 4종·트림 연출 완료, 리셋 타이머 UI·트레이·패키징 남음) |
+| Phase 5 — 에셋·연출 | 🔶 진행 중 (에셋 파이프라인·모션 4종·트림 연출·트레이 완료, 리셋 타이머 UI·패키징 남음) |
 
 ---
 
@@ -45,7 +45,8 @@
 - [x] `setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })`
 - [x] macOS Dock 아이콘 숨김 (`app.dock.hide()`)
 - [x] 단일 인스턴스 락 (`requestSingleInstanceLock`)
-- [x] 종료 수단 — Dock·트레이가 없어 전역 단축키 `Control+Alt+Shift+Q` 를 임시로 둠 (트레이는 Phase 5)
+- [x] 종료 수단 — Dock·트레이가 없어 전역 단축키 `Control+Alt+Shift+Q` 를 임시로 둠.
+      **Phase 5 에서 트레이 메뉴에도 추가됐다** — 단축키는 전체화면용으로 남긴다
 
 ### 1.3 Active Window 추적
 
