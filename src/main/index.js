@@ -1,13 +1,14 @@
 import process from 'node:process';
 import { app, globalShortcut } from 'electron';
 import { BURP_DURATION_MS, DEBUG, DEFAULT_LIMIT_MODE, QUIT_SHORTCUT } from './config.js';
-import { loadUserConfig, configPath } from './user-config.js';
+import { loadUserConfig, saveUserConfig, configPath } from './user-config.js';
 import { OverlayWindow } from './overlay-window.js';
 import { WindowTracker } from './window-tracker.js';
 import { createWindowSource } from './sources/index.js';
 import { IpcServer } from './ipc-server.js';
 import { UsageMonitor } from './usage-monitor.js';
 import { StateMachine } from './state-machine.js';
+import { TrayController } from './tray.js';
 
 // 두 개 돌면 캐릭터가 겹쳐 보인다.
 if (!app.requestSingleInstanceLock()) {
@@ -21,6 +22,7 @@ let tracker = null;
 let ipcServer = null;
 let usage = null;
 let character = null;
+let tray = null;
 /** 폴링마다 같은 에러를 쏟지 않도록 직전 메시지를 기억한다. */
 let lastTrackerErrorMessage = null;
 /** 트림 연출을 끝낼 타이머. StateMachine 은 타이머를 들지 않는다 (FR-13). */
@@ -100,12 +102,29 @@ async function bootstrap() {
   // --- 사용량 (Phase 2) ---
   usage = new UsageMonitor(userConfig.limitMode ?? DEFAULT_LIMIT_MODE);
 
+  // --- 트레이 (Phase 5) ---
+  tray = new TrayController(usage.limitMode);
+  tray.on('limit-mode', (mode) => {
+    usage.setLimitMode(mode);   // 사용률 기준이 바뀌므로 즉시 다시 내보낸다 (FR-10)
+    tray.setLimitMode(mode);
+    try {
+      saveUserConfig({ limitMode: mode });
+      log('[config] 한도 모드 저장:', mode);
+    } catch (error) {
+      // 저장만 실패한 것이라 이번 실행은 그대로 쓴다. 다음 실행에서 되돌아갈 뿐이다.
+      console.error('[config] 한도 모드를 저장하지 못했다:', error.message);
+    }
+  });
+  tray.create();
+
   usage.on('usage', (snapshot) => {
     log('[usage]', JSON.stringify(snapshot));
     if (burpTimer) heldUsage = snapshot;
     else overlay.send('overlay:usage', snapshot);
     // 상태 판정은 미루지 않는다. 체형만 늦게 보일 뿐 기절·복귀는 제때 갈려야 한다.
     character.setUsage(snapshot);
+    // 트레이는 트림과 무관하다. 연출 때문에 메뉴바 수치까지 멈출 이유가 없다.
+    tray.setUsage(snapshot);
   });
   usage.on('reset', ({ mode }) => {
     log('[usage] 한도 리셋:', mode);
@@ -134,7 +153,7 @@ async function bootstrap() {
     console.error('[ipc] 소켓 서버를 열지 못했다:', error.message);
   }
 
-  // Dock·트레이가 없어 종료할 방법이 필요하다. 트레이 메뉴는 Phase 5.
+  // 트레이 메뉴에도 종료가 있지만, 메뉴바가 가려지는 전체화면에서는 단축키가 유일한 수단이다.
   if (globalShortcut.register(QUIT_SHORTCUT, () => app.quit())) {
     console.log(`[app] 종료 단축키: ${QUIT_SHORTCUT}`);
   } else {
@@ -156,6 +175,7 @@ app.on('window-all-closed', () => {});
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
+  tray?.destroy();
   tracker?.stop();
   usage?.stop();
   ipcServer?.stop();
