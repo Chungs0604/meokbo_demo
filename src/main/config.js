@@ -10,6 +10,32 @@ export const DEBUG = process.env.CLAUDE_CS_DEBUG === '1';
 export const POLL_INTERVAL_MS = 250;
 
 /**
+ * Space 전환 애니메이션으로 보는 한 샘플 수평 이동 거리 (FR-03).
+ *
+ * macOS 는 Space 를 전환할 때 창을 실제로 미끄러뜨리고, CGWindowList 가 그 중간 좌표를
+ * 그대로 돌려준다. 따라가면 오버레이가 드문 샘플마다 순간이동해 깜빡이고 잔상처럼 보인다.
+ *
+ * Control+방향키 실측(샘플 간 이동량): 가운데는 110~371px 인데 **애니메이션이 ease-in /
+ * ease-out 이라 첫·끝 프레임은 작다** — 시작이 80px, 끝이 87px·78px 였다.
+ * 그래서 임계값은 그 아래에 있어야 한다. 이렇게 낮춰도 안전한 것은 거리만 보지 않고
+ * **순수 수평 이동**(Δy·크기 변화 0)을 함께 요구하기 때문이다 — window-tracker.js 의
+ * `slideDistance` 주석 참고.
+ *
+ * **변화가 있을 때만 샘플을 쏘는 소스를 전제한 값이다** (macOS 헬퍼). 그래서 쓰는 쪽에서
+ * macOS 로 한정한다 — window-tracker.js 의 `DETECT_SPACE_SLIDE` 주석 참고.
+ */
+export const SPACE_SLIDE_JUMP_PX = 60;
+
+/**
+ * 전환이 끝났다고 보기까지 기다리는 "조용한" 시간.
+ *
+ * 전환 애니메이션은 약 300ms 다. ease-out 끝자락의 보정 샘플(실측 34px·2px)은 이동량이
+ * 작아 임계값에 걸리지 않으므로, 그것까지 삼키려면 샘플 간격(16ms)보다 넉넉해야 한다.
+ * 반대로 너무 길면 전환이 끝난 뒤 캐릭터가 늦게 나타나는 것이 눈에 보인다.
+ */
+export const SPACE_SLIDE_SETTLE_MS = 120;
+
+/**
  * 캐릭터 오버레이 윈도우 크기 = 스프라이트 시트의 셀 크기.
  *
  * Phase 1 플레이스홀더는 120x84 로 가로가 길었는데, 실제 캐릭터(토끼)는 귀 때문에
