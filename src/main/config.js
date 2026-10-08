@@ -83,7 +83,7 @@ export const DEFAULT_LIMIT_MODE = '5h';
 /** 이만큼 입력·작업이 없으면 Idle 로 본다 (FR-21). */
 export const IDLE_AFTER_MS = 3 * 60 * 1000;
 
-/** Dock 아이콘도 트레이도 없는 상태라 종료 수단이 필요하다. 트레이 메뉴는 Phase 5. */
+/** 트레이 메뉴에도 종료가 있지만, 메뉴바가 가려지는 전체화면에서는 이것이 유일한 수단이다. */
 export const QUIT_SHORTCUT = 'Control+Alt+Shift+Q';
 
 /**
