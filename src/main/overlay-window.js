@@ -115,8 +115,7 @@ export class OverlayWindow {
 
     // 마우스 이벤트를 아래 터미널로 통과시켜 조작을 방해하지 않는다 (NFR-02).
     this.#win.setIgnoreMouseEvents(true, { forward: true });
-    this.#win.setAlwaysOnTop(true, 'screen-saver');
-    this.#win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    this.#pinEverywhere();
 
     await this.#win.loadFile(PAGE);
 
@@ -126,6 +125,22 @@ export class OverlayWindow {
         console.log('[renderer]', message ?? first?.message ?? first);
       });
     }
+  }
+
+  /**
+   * 모든 Space 위에, 다른 창보다 앞에 둔다.
+   *
+   * **생성 때 한 번으로 끝나지 않는다.** macOS 는 `hide()` 한 창을 다시 띄울 때 창 레벨과
+   * Space 소속을 놓치는 일이 있다. 그러면 앱은 보이게 했다고 믿는데 캐릭터가 터미널 뒤로
+   * 가거나 다른 Space 에 남는다 — "켜져 있는데 이 창에 안 보인다"로 나타난다.
+   *
+   * **보이는 동안에는 다시 걸지 않는다.** 위치를 맞출 때마다 걸어 봤더니 Space 전환이
+   * 샘플을 일으켜 전환 도중에 다시 걸리고, 그 때문에 전환이 깜빡이며 캐릭터 잔상이
+   * 남았다(실측). 숨김→표시로 바뀌는 순간만 덮는다.
+   */
+  #pinEverywhere() {
+    this.#win.setAlwaysOnTop(true, 'screen-saver');
+    this.#win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   }
 
   get isAlive() {
@@ -151,6 +166,7 @@ export class OverlayWindow {
     const wasVisible = this.#win.isVisible();
     if (!wasVisible) {
       this.#win.showInactive();
+      this.#pinEverywhere();
     }
     debugLog(
       `sync target=${JSON.stringify(target.bounds)} -> overlay=${JSON.stringify(bounds)}`,
