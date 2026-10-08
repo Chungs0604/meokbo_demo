@@ -83,6 +83,10 @@ export function computeWindowBounds(characterBounds) {
 export class OverlayWindow {
   #win = null;
   #lastBounds = null;
+  /** 창을 order-in 한 적이 있는지. 처음 한 번만 showInactive 한다. */
+  #ordered = false;
+  /** 캐릭터가 보이는 상태인지. 창 알파로 대신하므로 isVisible() 로는 알 수 없다. */
+  #visible = false;
 
   async create() {
     this.#win = new BrowserWindow({
@@ -130,13 +134,12 @@ export class OverlayWindow {
   /**
    * 모든 Space 위에, 다른 창보다 앞에 둔다.
    *
-   * **생성 때 한 번으로 끝나지 않는다.** macOS 는 `hide()` 한 창을 다시 띄울 때 창 레벨과
-   * Space 소속을 놓치는 일이 있다. 그러면 앱은 보이게 했다고 믿는데 캐릭터가 터미널 뒤로
-   * 가거나 다른 Space 에 남는다 — "켜져 있는데 이 창에 안 보인다"로 나타난다.
+   * **생성 때와 첫 order-in 때만 부른다.** macOS 는 order-out 한 창을 다시 띄울 때 창
+   * 레벨과 Space 소속을 놓치는 일이 있는데, 이제 창을 한 번만 올리고 그 뒤로는 알파로만
+   * 숨기므로(`hide` 주석) 그 상황 자체가 생기지 않는다.
    *
-   * **보이는 동안에는 다시 걸지 않는다.** 위치를 맞출 때마다 걸어 봤더니 Space 전환이
-   * 샘플을 일으켜 전환 도중에 다시 걸리고, 그 때문에 전환이 깜빡이며 캐릭터 잔상이
-   * 남았다(실측). 숨김→표시로 바뀌는 순간만 덮는다.
+   * 위치를 맞출 때마다 다시 걸면 안 된다. Space 전환이 샘플을 일으켜 전환 도중에 다시
+   * 걸리고, 그 때문에 전환이 깜빡이며 캐릭터 잔상이 남았다(실측).
    */
   #pinEverywhere() {
     this.#win.setAlwaysOnTop(true, 'screen-saver');
@@ -163,14 +166,20 @@ export class OverlayWindow {
       this.#lastBounds = windowBounds;
     }
 
-    const wasVisible = this.#win.isVisible();
+    const wasVisible = this.#visible;
     if (!wasVisible) {
-      this.#win.showInactive();
-      this.#pinEverywhere();
+      // order-in 은 처음 한 번뿐이다. 이후 보임/숨김은 알파로만 바꾼다 (hide 주석 참고).
+      if (!this.#ordered) {
+        this.#win.showInactive();
+        this.#pinEverywhere();
+        this.#ordered = true;
+      }
+      this.#win.setOpacity(1);
+      this.#visible = true;
     }
     debugLog(
       `sync target=${JSON.stringify(target.bounds)} -> overlay=${JSON.stringify(bounds)}`,
-      `moved=${moved} wasVisible=${wasVisible} nowVisible=${this.#win.isVisible()}`,
+      `moved=${moved} wasVisible=${wasVisible} nowVisible=${this.#visible}`,
       `actualBounds=${JSON.stringify(this.#win.getBounds())}`,
     );
 
@@ -187,11 +196,23 @@ export class OverlayWindow {
     });
   }
 
+  /**
+   * `hide()` 가 아니라 창 알파를 0 으로 내려 숨긴다 (FR-03).
+   *
+   * **Space 전환 중에는 `orderOut:` 이 화면에 반영되지 않는다.** 신호가 늦어서가 아니다 —
+   * `target-lost('no-window')` 가 전환 시작과 **같은 밀리초**에 들어오고 `hide()` 도 그때
+   * 불리는데(실측), 캐릭터는 그 뒤 약 360ms 를 더 제자리에 남아 잔상처럼 보였다.
+   * 창 알파는 WindowServer 가 합성 시점에 적용하므로 지연되지 않는다.
+   *
+   * 그래서 창은 처음 한 번만 order-in 하고, 이후 숨김/표시는 알파만 0↔1 로 바꾼다.
+   * `isVisible()` 은 늘 true 가 되므로 상태는 `#visible` 로 따로 들고 있어야 한다.
+   */
   hide(reason) {
     if (!this.isAlive) return;
-    if (this.#win.isVisible()) {
+    if (this.#visible) {
       debugLog(`hide reason=${reason}`);
-      this.#win.hide();
+      this.#win.setOpacity(0);
+      this.#visible = false;
     }
     this.send('overlay:state', { visible: false, reason });
   }
